@@ -266,6 +266,9 @@ assign anain[8]=count[24];
 	);	
 	
 	// Text Overlay (from flash rom)
+	// Important to put commit hash in flash, 
+	// otherwise influences the build reproduction logic
+	
 	logic text_ovl;
 	logic [3:0] text_color;
 	text_overlay _text
@@ -287,11 +290,14 @@ assign anain[8]=count[24];
 		.flash_valid( flash_valid 		 )
 	);
 
+	// Simple rolling counter to display as dynamic text.
+	logic [31:0] clk_count;
+	always_ff@(posedge hdmi_clk) clk_count <= clk_count + 1;
 	
 	// Overlay Text - Dynamic
 	logic [6:0] id_str;
 	string_overlay #(.LEN(18)) _id0(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('h48), .y('h09), .out( id_str[0]), .str( "FIPS 180-4 SHA-256" ) );
-	//hex_overlay    #(.LEN(12 )) _id1(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('h50),.y('d58), .out( id_str[1]), .in( gen_count[47:0] ) );
+	hex_overlay    #(.LEN(8 )) _id1(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('h50),.y('d58), .out( id_str[1]), .in( clk_count[31:0] ) );
    //bin_overlay    #(.LEN(1 )) _id2(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.bin_char(bin_char), .x('h46),.y('h09), .out( id_str[2]), .in( disp_id == 32'h0E96_0001 ) );
 	//string_overlay #(.LEN(14)) _id3(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('d119),.y('d58), .out( id_str[3]), .str( "commit 0123abc" ) );
 	//hex_overlay    #(.LEN(6 )) _id4(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('h50),.y('d54), .out( id_str[4]), .in( genpersec_latch[23:0] ) );
