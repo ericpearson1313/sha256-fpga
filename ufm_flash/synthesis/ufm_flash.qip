@@ -85,7 +85,7 @@ set_global_assignment -library "ufm_flash" -name VERILOG_FILE [file join $::quar
 set_global_assignment -library "ufm_flash" -name VERILOG_FILE [file join $::quartus(qip_path) "submodules/altera_onchip_flash.v"]
 set_global_assignment -library "ufm_flash" -name VERILOG_FILE [file join $::quartus(qip_path) "submodules/altera_onchip_flash_avmm_data_controller.v"]
 set_global_assignment -library "ufm_flash" -name VERILOG_FILE [file join $::quartus(qip_path) "submodules/altera_onchip_flash_avmm_csr_controller.v"]
-set_global_assignment -library "ufm_flash" -name SDC_FILE [file join $::quartus(qip_path) "submodules/altera_onchip_flash.sdc"]
+#set_global_assignment -library "ufm_flash" -name SDC_FILE [file join $::quartus(qip_path) "submodules/altera_onchip_flash.sdc"]
 set_global_assignment -library "ufm_flash" -name VERILOG_FILE [file join $::quartus(qip_path) "submodules/rtl/altera_onchip_flash_block.v"]
 
 set_global_assignment -entity "altera_onchip_flash" -library "ufm_flash" -name IP_TOOL_NAME "altera_onchip_flash"
