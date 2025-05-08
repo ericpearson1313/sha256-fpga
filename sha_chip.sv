@@ -266,7 +266,7 @@ assign speaker_n = !speaker;
 	logic [255:0] sha_out;	
 	sha_core _sha_core (
 		.clk ( clk ),
-		.reset( clk ),
+		.reset( reset ),
 		// Input strobe and message
 		.in_valid( ld_msg ),
 		.message( (msg_idx)?ibuf[1]:ibuf[0] ),
