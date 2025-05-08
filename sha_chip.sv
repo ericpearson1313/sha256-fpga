@@ -287,7 +287,7 @@ assign speaker_n = !speaker;
 	logic inc_stat;
 	assign inc_stat = (state_count == 129); // finished a hash
 	logic [47:0] op_count;
-	always_ff@( posedge clk4 ) begin
+	always_ff@( posedge clk ) begin
 		op_count <= ( inc_stat ) ? op_count + 1 : op_count;
 	end
 	
@@ -298,10 +298,10 @@ assign speaker_n = !speaker;
 		second_tick <= ( second_count == 26'd0 ) ? 1'b1 : 1'b0;
 	end
 	
-	logic [23:0] oppersec_latch;
-	logic [23:0] oppersec_count;
+	logic [31:0] oppersec_latch;
+	logic [31:0] oppersec_count;
 	logic [3:0] sec_del;
-	always_ff @(posedge clk4) begin
+	always_ff @(posedge clk) begin
 		sec_del[3:0] <= { sec_del[2:0], second_tick };
 		if( sec_del[2] && !sec_del[3] ) begin // second pulse rising edge
 			oppersec_latch <= oppersec_count;
@@ -435,7 +435,7 @@ assign speaker_n = !speaker;
 	hex_overlay    #(.LEN(12 )) _id1(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('h50),.y('d58), .out( id_str[1]), .in( op_count[47:0] ) );
    //bin_overlay    #(.LEN(1 )) _id2(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.bin_char(bin_char), .x('h46),.y('h09), .out( id_str[2]), .in( disp_id == 32'h0E96_0001 ) );
 	//string_overlay #(.LEN(14)) _id3(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('d119),.y('d58), .out( id_str[3]), .str( "commit 0123abc" ) );
-	hex_overlay    #(.LEN(6 )) _id4(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('h50),.y('d54), .out( id_str[4]), .in( oppersec_latch[23:0] ) );
+	hex_overlay    #(.LEN(8 )) _id4(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('h50),.y('d54), .out( id_str[4]), .in( oppersec_latch[31:0] ) );
 	string_overlay #(.LEN(16)) _id5(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('h48), .y('d56), .out( id_str[5]), .str( "Total Operations" ) );
 	string_overlay #(.LEN(14)) _id6(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('h48), .y('d52), .out( id_str[6]), .str( "Operations/sec" ) );
 
