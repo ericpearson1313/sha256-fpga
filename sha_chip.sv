@@ -210,14 +210,82 @@ assign speaker_n = !speaker;
 /////////////////////	
 
 
+	// Key data structures
+	// two 512 bit message blocks
+	logic [0:1][0:63][7:0] ibuf;
+	// 256 bit sha2 message hash
+	logic [255:0] hash;
 
 
+	// State machine
+	logic get_msg; // get a new message 
+	logic ld_msg;	// Load message into sha unit
+	logic	msg_idx; 
+	logic sha_go;
+	
+	assign sha_go = short_fire || long_fire;
+	
+	logic [7:0] state_count;
+	always_ff @(posedge clk) begin
+		if( reset ) begin
+			state_count <= 0;
+		end else begin
+			if( state_count == 0 ) begin
+				state_count <= ( sha_go ) ? 1 : 0;
+			end else if( state_count == 129 ) begin
+				state_count <= ( sha_go ) ? 65 : 0;
+			end else begin
+				state_count <= state_count + 1;
+			end
+		end
+	end
+	
+	assign get_msg = ( state_count == 1 || ( state_count == 129 && sha_go ) ) ? 1'b1 : 1'b0;
+	assign  ld_msg = ( state_count == 2 || state_count == 66 ) ? 1'b1 : 1'b0;
+	assign msg_idx = ( state_count == 66 ) ? 1'b1 : 1'b0;
+	
+	// Load input buffer and increment nonce
+	logic [31:0] nonce;
+	always_ff @(posedge clk) begin
+		if( reset ) begin
+			ibuf <= 0;
+			nonce <= 0;
+		end else if( get_msg ) begin
+			nonce <= nonce + 1;
+			ibuf[0] <= 512'h000000014cc2c57c7905fd399965282c87fe259e7da366e035dc087a0000141f000000006427b6492f2b052578fb4bc23655ca4e8b9e2b9b69c88041b2ac8c77;
+			ibuf[1] <= { 96'h1571d1be4de695931a269421, 
+								nonce[31:0],  
+			            128'h00000080000000000000000000000000,
+							128'h00000000000000000000000000000000,
+							 64'h0000000000000000,
+							 64'h0000000080020000 };		
+		end
+	end
+	
+	logic ovalid;
+	logic [255:0] sha_out;	
+	sha_core _sha_core (
+		.clk ( clk ),
+		.reset( clk ),
+		// Input strobe and message
+		.in_valid( ld_msg ),
+		.message( (msg_idx)?ibuf[1]:ibuf[0] ),
+		// Output 
+		.out_valid( ovalid ),
+		.hash( sha_out )
+	);
+
+	// Latch output hash for display
+	always_ff @(posedge clk) 
+		hash <= ( ovalid ) ? sha_out : hash;
+	
+	
 	///////////////////////////////////////
 	// Stat counter timer and rate counters
 	///////////////////////////////////////
 	
 	logic inc_stat;
-	assign inc_stat = short_fire | long_fire;
+	assign inc_stat = (state_count == 129); // finished a hash
 	logic [47:0] op_count;
 	always_ff@( posedge clk4 ) begin
 		op_count <= ( inc_stat ) ? op_count + 1 : op_count;
@@ -243,8 +311,6 @@ assign speaker_n = !speaker;
 			oppersec_count <= ( inc_stat ) ? oppersec_count + 1 : oppersec_count;
 		end
 	end
-
-
 	
 	/////////////////////////////////
 	////
@@ -364,7 +430,7 @@ assign speaker_n = !speaker;
 
 
 	// Overlay Text - Dynamic
-	logic [6:0] id_str;
+	logic [9:0] id_str;
 	string_overlay #(.LEN(18)) _id0(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('h48), .y('h09), .out( id_str[0]), .str( "FIPS 180-4 SHA-256" ) );
 	hex_overlay    #(.LEN(12 )) _id1(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('h50),.y('d58), .out( id_str[1]), .in( op_count[47:0] ) );
    //bin_overlay    #(.LEN(1 )) _id2(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.bin_char(bin_char), .x('h46),.y('h09), .out( id_str[2]), .in( disp_id == 32'h0E96_0001 ) );
@@ -373,6 +439,12 @@ assign speaker_n = !speaker;
 	string_overlay #(.LEN(16)) _id5(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('h48), .y('d56), .out( id_str[5]), .str( "Total Operations" ) );
 	string_overlay #(.LEN(14)) _id6(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('h48), .y('d52), .out( id_str[6]), .str( "Operations/sec" ) );
 
+	// Display two 512 bit message blocks and 256 bit output hash
+	hex_overlay #(.LEN(128)) _id7(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d16), .out( id_str[7]), .in( ibuf[0] ) );
+	hex_overlay #(.LEN(128)) _id8(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d18), .out( id_str[8]), .in( ibuf[1] ) );
+	hex_overlay #(.LEN(64 )) _id9(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d20), .out( id_str[9]), .in( hash    ) );
+	
+	
 
 	assign overlay = ( text_ovl && text_color == 0 ) | // normal text
 						  (|id_str  ) ;
@@ -458,6 +530,16 @@ module sha_core (
 	logic wt_shift;
 	logic wt_load;	
 	logic init_hash;	
+	
+	logic [64:0] t;
+	always_ff @(posedge clk)
+		t <= { t[63:0], in_valid };
+	
+	assign out_valid = t[63];
+	assign kt_shift = |t[63:0];
+	assign wt_load = in_valid;
+	assign wt_shift = |t[62:0];
+	assign init_hash = t[0];
 	
 	///////
 	// Kt
