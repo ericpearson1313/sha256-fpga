@@ -2,11 +2,210 @@
 `timescale 1ns / 1ps
 module testbench( );
 
-`define HDMI_INFOFRAME
+`define SHA2_TEST
+//`define HDMI_INFOFRAME
 //`define FONT_GEN
 //`define DIV_TEST
 //`define PSRAM_TEST
 //`define BLASTER_TEST
+
+
+///////////////////////////////
+`ifdef SHA2_TEST
+
+    //////////////////////
+    // Let there be Clocks!
+    //////////////////////
+    
+    logic clk, clk4;
+    initial begin
+        clk = 1'b1;
+		  clk4 = 1'b1;
+        forever begin
+				#(2.5ns) clk4 = 0;
+				#(2.5ns) clk4 = 1;
+				#(2.5ns) clk4 = 0;
+				#(2.5ns) begin clk4 = 1; clk = ~clk; end
+        end 
+    end
+	 
+	 // Reset generation
+	 
+	 logic reset; // active high
+	 initial begin
+			reset = 1'b1;
+			for( int ii = 0; ii < 10; ii++ ) begin
+				@(posedge clk);
+			end
+			@(negedge clk);
+			reset = 1'b0;
+	 end
+			
+	 // Simulation e-stop.
+	 
+	 initial begin
+        for( int ii = 0; ii < 1000; ii++ ) 
+				@(posedge clk);
+        $stop;
+	 end
+
+	 ////////////////
+	 // UUT
+	 ////////////////
+	 
+		logic [0:7][31:0] hash;
+		logic ovalid;
+		logic [511:0] msg;
+		logic ivalid;
+		
+	 	sha_core _uut (
+			.clk ( clk ),
+			.reset( reset ),
+		// Input strobe and message
+			.in_valid( ivalid ),
+			.message( msg ),
+		// Output 
+			.out_valid( ovalid ),
+			.hash( hash )
+		);
+		
+		logic [0:2][0:7][31:0] hash_out;
+		always_ff @(posedge clk) 
+			if( ovalid ) 
+				hash_out <= { hash_out[1:2], hash };
+			
+
+	// Test sequence
+	initial begin
+		// reset signals
+		msg = 0;
+		ivalid = 0;
+
+      // wwait for reset de-assert
+		while( reset ) @(posedge clk);
+		
+		// and some clock cycles
+      for( int ii = 0; ii < 70; ii++ ) @(posedge clk); // wait pipeline fill cycles		
+		
+		// Test #1 - Single block NIST message sample
+
+			msg = {	32'h61626380,	// "abc"
+						32'h00000000,
+						32'h00000000,
+						32'h00000000,
+						32'h00000000,
+						32'h00000000,
+						32'h00000000,
+						32'h00000000,
+						32'h00000000,
+						32'h00000000,
+						32'h00000000,
+						32'h00000000,
+						32'h00000000,
+						32'h00000000,
+						32'h00000000,
+						32'h00000018  };
+						
+		for( int ii = 0; ii < 65; ii++ ) begin
+			ivalid = ( ii == 0 ) ? 1'b1 : 1'b0;
+			@( posedge clk );
+		end
+		
+
+		
+		// Test #2 - Two block NIST message sample
+		
+		// and some clock cycles
+      for( int ii = 0; ii < 15; ii++ ) @(posedge clk); // +15 cycles		
+				
+		for( int ii = 0; ii < 129; ii++ ) begin
+			ivalid = ( ii == 0 || ii == 64 ) ? 1'b1 : 1'b0;
+			if( ii == 0 ) begin
+			msg = {	32'h61626364,	// "abc"
+						32'h62636465,
+						32'h63646566,
+						32'h64656667,
+						32'h65666768,
+						32'h66676869,
+						32'h6768696A,
+						32'h68696A6B,
+						32'h696A6B6C,
+						32'h6A6B6C6D,
+						32'h6B6C6D6E,
+						32'h6C6D6E6F,
+						32'h6D6E6F70,
+						32'h6E6F7071,
+						32'h80000000,
+						32'h00000000  };
+			end else if ( ii == 64 ) begin
+			msg = {	32'h00000000,	// "abc"
+						32'h00000000,
+						32'h00000000,
+						32'h00000000,
+						32'h00000000,
+						32'h00000000,
+						32'h00000000,
+						32'h00000000,
+						32'h00000000,
+						32'h00000000,
+						32'h00000000,
+						32'h00000000,
+						32'h00000000,
+						32'h00000000,
+						32'h00000000,
+						32'h000001C0  };
+			end		
+			@( posedge clk );
+		end
+
+		// and some clock cycles
+      for( int ii = 0; ii < 15; ii++ ) @(posedge clk); // +15 cycles		
+		
+		// Evaluate Results
+		if( hash_out[0] != { 32'hBA7816BF, 
+									32'h8F01CFEA, 
+									32'h414140DE, 
+									32'h5DAE2223, 
+									32'hB00361A3, 
+									32'h96177A9C, 
+									32'hB410FF61, 
+									32'hF20015AD } ) 
+				$display("ERROR: single buffer message\n");	
+		else
+				$display("Passed 1 \n");	
+		
+				
+		if( hash_out[1] != { 32'h85E655D6, 
+									32'h417A1795, 
+									32'h3363376A, 
+									32'h624CDE5C, 
+									32'h76E09589, 
+									32'hCAC5F811, 
+									32'hCC4B32C1, 
+									32'hF20E533A } ) 
+				$display("ERROR: two buffer message, intermediate hash\n");	
+		else
+				$display("Passed 2 \n");	
+				
+		if( hash_out[2] != { 32'h248D6A61, 
+									32'hD20638B8, 
+									32'hE5C02693, 
+									32'h0C3E6039, 
+									32'hA33CE459, 
+									32'h64FF2167, 
+									32'hF6ECEDD4, 
+									32'h19DB06C1 } ) 
+				$display("ERROR: two buffer message, final hash\n");	
+		else
+				$display("Passed 3 \n");					
+
+			// Stop Sim in a bit
+      for( int ii = 0; ii < 100; ii++ ) @(posedge clk); // 16 cycles		
+		 $stop;
+		
+	end // initial
+	
+`endif // SHA2_TEST
 
 
 ///////////////////////////////
