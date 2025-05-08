@@ -85,7 +85,7 @@ module testbench( );
 		while( reset ) @(posedge clk);
 		
 		// and some clock cycles
-      for( int ii = 0; ii < 50; ii++ ) @(posedge clk); // wait pipeline fill cycles		
+      for( int ii = 0; ii < 70; ii++ ) @(posedge clk); // wait pipeline fill cycles		
 		
 		// Test #1 - Single block NIST message sample
 
@@ -157,8 +157,49 @@ module testbench( );
 			end		
 			@( posedge clk );
 		end
+
+		// and some clock cycles
+      for( int ii = 0; ii < 15; ii++ ) @(posedge clk); // +15 cycles		
 		
-		// Stop Sim in a bit
+		// Evaluate Results
+		if( hash_out[0] != { 32'hBA7816BF, 
+									32'h8F01CFEA, 
+									32'h414140DE, 
+									32'h5DAE2223, 
+									32'hB00361A3, 
+									32'h96177A9C, 
+									32'hB410FF61, 
+									32'hF20015AD } ) 
+				$display("ERROR: single buffer message\n");	
+		else
+				$display("Passed 1 \n");	
+		
+				
+		if( hash_out[1] != { 32'h85E655D6, 
+									32'h417A1795, 
+									32'h3363376A, 
+									32'h624CDE5C, 
+									32'h76E09589, 
+									32'hCAC5F811, 
+									32'hCC4B32C1, 
+									32'hF20E533A } ) 
+				$display("ERROR: two buffer message, intermediate hash\n");	
+		else
+				$display("Passed 2 \n");	
+				
+		if( hash_out[2] != { 32'h248D6A61, 
+									32'hD20638B8, 
+									32'hE5C02693, 
+									32'h0C3E6039, 
+									32'hA33CE459, 
+									32'h64FF2167, 
+									32'hF6ECEDD4, 
+									32'h19DB06C1 } ) 
+				$display("ERROR: two buffer message, final hash\n");	
+		else
+				$display("Passed 3 \n");					
+
+			// Stop Sim in a bit
       for( int ii = 0; ii < 100; ii++ ) @(posedge clk); // 16 cycles		
 		 $stop;
 		

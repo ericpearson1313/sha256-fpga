@@ -110,7 +110,7 @@ module sha_core (
 		sig1_e = 0;
 		sig0_a = 0;
 
-		if( init_hash ) begin
+		if( init_hash && !hacc ) begin // load standard start value
 			{ da, db, dc, dd, de, df, dg, dh } = { 
 				32'h6a09e667, 
 				32'hbb67ae85, 
@@ -120,6 +120,15 @@ module sha_core (
 				32'h9b05688c, 
 				32'h1f83d9ab, 
 				32'h5be0cd19 };   // Step 2 for 6.1.2 and 6.2.2
+		end else if ( init_hash && hacc ) begin // load new hash
+			da = hash_reg[0] + acc_reg[0];
+			db = hash_reg[1] + acc_reg[1];
+			dc = hash_reg[2] + acc_reg[2];
+			dd = hash_reg[3] + acc_reg[3];
+			de = hash_reg[4] + acc_reg[4];
+			df = hash_reg[5] + acc_reg[5];
+			dg = hash_reg[6] + acc_reg[6];
+			dh = hash_reg[7] + acc_reg[7];			
 		end else begin
 			{ da, db, dc, dd, de, df, dg, dh } = acc_reg;
 		end
@@ -145,13 +154,13 @@ module sha_core (
 	end
 	
 	always_ff @(posedge clk) begin
-		if( init_hash ) begin
-			hash_reg <= { da, db, dc, dd, de, df, dg, dh };
-		end else if( hacc ) begin
+		if( hacc ) begin
 			for( int ii = 0 ; ii < 8; ii++ ) begin
-				hash_reg[ii] = hash_reg[ii] + acc_reg[ii];
+				hash_reg[ii] <= hash_reg[ii] + acc_reg[ii];
 			end
-		end
+		end else if( init_hash ) begin
+			hash_reg <= { da, db, dc, dd, de, df, dg, dh };
+		end 
 	end
 	
 	assign hash = hash_reg; // Output
