@@ -222,6 +222,7 @@ assign speaker_n = !speaker;
 	logic ld_msg;	// Load message into sha unit
 	logic	msg_idx; 
 	logic sha_go;
+	logic redo; // means don't hold this hash for future accumulation, we can redo.
 	
 	assign sha_go = short_fire || long_fire;
 	
@@ -233,7 +234,7 @@ assign speaker_n = !speaker;
 			if( state_count == 0 ) begin
 				state_count <= ( sha_go ) ? 1 : 0;
 			end else if( state_count == 129 ) begin
-				state_count <= ( sha_go ) ? 65 : 0;
+				state_count <= ( sha_go ) ? 66 : 0; // redo
 			end else begin
 				state_count <= state_count + 1;
 			end
@@ -243,6 +244,7 @@ assign speaker_n = !speaker;
 	assign get_msg = ( state_count == 1 || ( state_count == 129 && sha_go ) ) ? 1'b1 : 1'b0;
 	assign  ld_msg = ( state_count == 2 || state_count == 66 ) ? 1'b1 : 1'b0;
 	assign msg_idx = ( state_count == 66 ) ? 1'b1 : 1'b0;
+	assign redo    = ( state_count == 66 ) ? 1'b1 : 1'b0;
 	
 	// Load input buffer and increment nonce
 	logic [31:0] nonce;
@@ -305,6 +307,7 @@ assign speaker_n = !speaker;
 		.reset( reset ),
 		// Input strobe and message
 		.in_valid( ld_msg ),
+		.redo( redo ),
 		.message( (msg_idx)?ibuf[1]:ibuf[0] ),
 		// Output 
 		.out_valid( ovalid ),
@@ -321,7 +324,7 @@ assign speaker_n = !speaker;
 	///////////////////////////////////////
 	
 	logic inc_stat;
-	assign inc_stat = (state_count == 129); // finished a hash
+	assign inc_stat = (state_count == 100); // doing 1 has calc, guaranteed
 	logic [47:0] op_count;
 	always_ff@( posedge clk ) begin
 		op_count <= ( inc_stat ) ? op_count + 1 : op_count;
