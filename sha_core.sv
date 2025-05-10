@@ -40,6 +40,8 @@ module sha_core (
 	logic	[0:63][31:0] kt;
 	assign kt = kt_reg;
 	
+	int sh_wid = 2; // shift 1 to 48 rounds per cycle	
+
 	always_ff @(posedge clk) begin
 		if( reset ) begin
 			kt_reg <= {	 32'h428a2f98, 32'h71374491, 32'hb5c0fbcf, 32'he9b5dba5,   
@@ -59,7 +61,10 @@ module sha_core (
 							 32'h748f82ee, 32'h78a5636f, 32'h84c87814, 32'h8cc70208,   
 							 32'h90befffa, 32'ha4506ceb, 32'hbef9a3f7, 32'hc67178f2 };	
 		end else if( kt_shift ) begin
-			kt_reg <= { kt_reg[1:63], kt_reg[0] }; // shift/Rotate through the values kt. ROM maybe?
+			for( int ii = 0; ii < 64; ii++ ) begin
+					kt_reg[ii] = kt_reg[(ii+sh_wid)%64];
+			end
+			//kt_reg <= { kt_reg[1:63], kt_reg[0] }; // shift/Rotate through the values kt. ROM maybe?
 		end else begin
 			kt_reg <= kt_reg;
 		end
@@ -92,27 +97,14 @@ module sha_core (
 		end // for
 	end //always
 	
-	int sh_wid = 1; // shift 1 to 48 rounds per cycle
+
 	always_ff @(posedge clk) begin
 		if( wt_load ) begin
 			wt_reg <= message;						// Initally load with message 16 words
 		end else if( wt_shift ) begin
-			wt_reg[ 0] <= wt[ 0+sh_wid]; // Create remaining 48 words as we shift wt
-			wt_reg[ 1] <= wt[ 1+sh_wid];
-			wt_reg[ 2] <= wt[ 2+sh_wid];
-			wt_reg[ 3] <= wt[ 3+sh_wid];
-			wt_reg[ 4] <= wt[ 4+sh_wid];
-			wt_reg[ 5] <= wt[ 5+sh_wid];
-			wt_reg[ 6] <= wt[ 6+sh_wid];
-			wt_reg[ 7] <= wt[ 7+sh_wid];
-			wt_reg[ 8] <= wt[ 8+sh_wid];
-			wt_reg[ 9] <= wt[ 9+sh_wid];
-			wt_reg[10] <= wt[10+sh_wid];
-			wt_reg[11] <= wt[11+sh_wid];
-			wt_reg[12] <= wt[12+sh_wid];
-			wt_reg[13] <= wt[13+sh_wid];
-			wt_reg[14] <= wt[14+sh_wid];
-			wt_reg[15] <= wt[15+sh_wid];		
+			for( int ii = 0; ii < 15; ii++ ) begin
+				wt_reg[ii] = wt[ii+sh_wid];
+			end
 		end else begin
 			wt_reg <= wt_reg;
 		end
@@ -194,9 +186,8 @@ module sha_core (
       end
 	end	
 
-	int idx = 0; // select output tap
 	always_ff @(posedge clk) begin
-		acc_reg <= { qa[idx], qb[idx], qc[idx], qd[idx], qe[idx], qf[idx], qg[idx], qh[idx] };
+		acc_reg <= { qa[sh_wid-1], qb[sh_wid-1], qc[sh_wid-1], qd[sh_wid-1], qe[sh_wid-1], qf[sh_wid-1], qg[sh_wid-1], qh[sh_wid-1] };
 	end
 	
 	always_ff @(posedge clk) begin
