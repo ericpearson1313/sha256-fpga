@@ -57,12 +57,14 @@ module testbench( );
 		logic ovalid;
 		logic [511:0] msg;
 		logic ivalid;
+		logic redo;
 		
 	 	sha_core _uut (
 			.clk ( clk ),
 			.reset( reset ),
 		// Input strobe and message
 			.in_valid( ivalid ),
+			.redo( redo ),
 			.message( msg ),
 		// Output 
 			.out_valid( ovalid ),
@@ -73,14 +75,17 @@ module testbench( );
 		always_ff @(posedge clk) 
 			if( ovalid ) 
 				hash_out <= { hash_out[1:2], hash };
-			
+
+	logic [0:3][0:63][7:0] bc_msg; 
+	logic [0:2][0:15][31:0] in_msg;				
 
 	// Test sequence
 	initial begin
 		// reset signals
 		msg = 0;
 		ivalid = 0;
-
+		redo = 0;
+		
       // wwait for reset de-assert
 		while( reset ) @(posedge clk);
 		
@@ -199,7 +204,106 @@ module testbench( );
 		else
 				$display("Passed 3 \n");					
 
-			// Stop Sim in a bit
+				
+		/////////////////////////////////////////////////////////////		
+		// Test #3 - Two block sample 80 byte message with nonce
+		/////////////////////////////////////////////////////////////		
+		/////////////////////////////////////////////////////////////		
+		//	Midstate: 90f741afb3ab06f1a582c5c85ee7a561912b25a7cd09c060a89b3c2a73a48e22
+		//	Data: 000000014cc2c57c7905fd399965282c87fe259e7da366e035dc087a0000141f000000006427b6492f2b052578fb4bc23655ca4e8b9e2b9b69c88041b2ac8c771571d1be4de695931a2694217a33330e000000800000000000000000000000000000000000000000000000000000000000000000000000000000000080020000
+		//	NONCE: 32'h0e33337a == 238,236,538
+		//	Verilog values:
+		//	Data: 512'h000002800000000000000000000000000000000000000000000000000000000000000000000000000000000080000000000000002194261a9395e64dbed17115
+		//	Midstate: 256'h228ea4732a3c9ba860c009cda7252b9161a5e75ec8c582a5f106abb3af41f790
+
+	
+		bc_msg[0] = 512'h000000014cc2c57c7905fd399965282c87fe259e7da366e035dc087a0000141f000000006427b6492f2b052578fb4bc23655ca4e8b9e2b9b69c88041b2ac8c77;
+		bc_msg[1] = 512'h1571d1be4de695931a2694217a33330e000000800000000000000000000000000000000000000000000000000000000000000000000000000000000080020000;
+		
+		// Difficulty
+		// exp = bc_msg[1][8] 
+		// Thresh = bc_msg[1][9:11]
+		
+		// Resort into correct byte packing
+
+		for( int bb = 0; bb < 3; bb++ ) // block
+			for( int ww = 0; ww < 16; ww++ ) // 32 bit words
+				in_msg[bb][ww][31:0] = { bc_msg[bb][ww*4+3], bc_msg[bb][ww*4+2], bc_msg[bb][ww*4+1], bc_msg[bb][ww*4+0] };
+		
+
+		// and some clock cycles
+      for( int ii = 0; ii < 15; ii++ ) @(posedge clk); // +15 cycles						
+	
+		// Run through 2 blocks 
+		msg = in_msg[0];
+		for( int ii = 0; ii < 64; ii++ ) begin
+			ivalid = ( ii == 0 ) ? 1'b1 : 1'b0;
+			@( posedge clk );
+		end
+		msg = in_msg[1];
+		for( int ii = 0; ii < 64; ii++ ) begin
+			ivalid = ( ii == 0 ) ? 1'b1 : 1'b0;
+			@( posedge clk );
+		end
+	
+		// and some clock cycles
+      for( int ii = 0; ii < 15; ii++ ) @(posedge clk); // +15 cycles						
+		
+		// Take last hash and feed it into SHA as a message
+		
+		in_msg[2] = { hash_out[2][0], 
+						  hash_out[2][1],
+						  hash_out[2][2],
+						  hash_out[2][3],
+						  hash_out[2][4],
+						  hash_out[2][5],
+						  hash_out[2][6],
+  						  hash_out[2][7],
+						  256'h80000000_00000000_00000000_00000000_00000000_00000000_00000000_00000100 };
+		
+		
+		msg = in_msg[2]; 
+		for( int ii = 0; ii < 64; ii++ ) begin
+			ivalid = ( ii == 0 ) ? 1'b1 : 1'b0;
+			@( posedge clk );
+		end	
+
+		// and some clock cycles
+      for( int ii = 0; ii < 15; ii++ ) @(posedge clk); // +15 cycles					
+
+		$display ("blk1 = %h\n", in_msg[0] );
+		$display ("blk2 = %h\n", in_msg[1] );
+		$display ("blk3 = %h\n", in_msg[2] );			
+		
+		$display ("hash_out[0] = %h\n", hash_out[0] );
+		$display ("hash_out[1] = %h\n", hash_out[1] );
+		$display ("hash_out[2] = %h\n", hash_out[2] );	
+
+		// check midstate is expected
+		if( hash_out[0] != { 32'haf41f790, 32'hf106abb3, 32'hc8c582a5, 32'h61a5e75e, 
+									32'ha7252b91, 32'h60c009cd, 32'h2a3c9ba8, 32'h228ea473 } ) 
+				$display("ERROR: Wronge expected midstate\n");
+		else
+				$display("Pass: correct midstate\n");
+			
+
+		// Check HASH passes difficulty
+		if( hash_out[2][7] != 32'h00000000 ) 
+				$display("ERROR: failed difficulty\n");
+		else
+				$display("Pass: passes difficulty\n");		
+		
+		// Difficulty
+		// exp = bc_msg[1][8] = 8'h1a
+		// Thresh = bc_msg[1][9:11] = 12'h269421		
+		
+		$display("Diffculty exp: %h, thresh %h\n", bc_msg[1][8], bc_msg[1][9:11] );
+		
+		for( int ii = bc_msg[1][8]+1; ii < 32; ii++ )
+			$display( "zero byte %d = %h\n", ii, hash_out[2][ii>>2][8*(ii&3)+7-:8] );		
+		
+		
+		// Stop Sim in a bit
       for( int ii = 0; ii < 100; ii++ ) @(posedge clk); // 16 cycles		
 		 $stop;
 		
