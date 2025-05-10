@@ -37,8 +37,8 @@ module sha_core (
 	///////
 
 	logic [0:63][31:0] kt_reg;
-	logic	[31:0] kt;
-	assign kt = kt_reg[0];
+	logic	[0:63][31:0] kt;
+	assign kt = kt_reg;
 	
 	always_ff @(posedge clk) begin
 		if( reset ) begin
@@ -70,27 +70,49 @@ module sha_core (
 	///////
 
 	logic [0:15][31:0] wt_reg;
-	logic	[31:0] wt;
-	logic [31:0] s0, s1;
-	logic [31:0] w2, w15, w7, w16;
-	logic [31:0] wt_next;
+	logic	[0:63][31:0] wt;
+	logic [0:63][31:0] s0, s1;
+	logic [0:63][31:0] w2, w15, w7, w16;
+	logic [0:63][31:0] wt_next;
 	
-	assign wt = wt_reg[0];		
-	assign w2 = wt_reg[16-2];
-	assign w7 = wt_reg[16-7];
-	assign w15= wt_reg[16-15];
-	assign w16= wt_reg[16-16];
+	// build wt[64] array
+	always_comb begin
+		for( int ii = 0; ii < 64; ii++ ) begin
+			if( ii < 16 ) begin
+				wt[ii] = wt_reg[ii];
+			end else begin 
+				w2[ii] = wt[ii-2];
+				w7[ii] = wt[ii-7];
+				w15[ii]= wt[ii-15];
+				w16[ii]= wt[ii-16];
+				s1[ii] = {  w2[ii][16:0],  w2[ii][31:17] } ^ {  w2[ii][18:0],  w2[ii][31:19] } ^ { 10'b0,  w2[ii][31:10] }; // section 1.1.2, eqn 4.7
+				s0[ii] = { w15[ii][ 6:0], w15[ii][31: 7] } ^ { w15[ii][17:0], w15[ii][31:18] } ^ {  3'b0, w15[ii][31: 3] }; // section 1.1.2, eqn 4.6
+				wt[ii] = ( s1[ii] + w7[ii] ) + ( s0[ii] + w16[ii] ); // section 6.2.2 step 1		
+			end
+		end // for
+	end //always
 	
-   assign  s1 = {  w2[16:0],  w2[31:17] } ^ {  w2[18:0],  w2[31:19] } ^ { 10'b0,  w2[31:10] }; // section 1.1.2, eqn 4.7
-   assign  s0 = { w15[ 6:0], w15[31: 7] } ^ { w15[17:0], w15[31:18] } ^ {  3'b0, w15[31: 3] }; // section 1.1.2, eqn 4.6
-   assign wt_next = ( s1 + w7 ) + ( s0 + w16 ); // section 6.2.2 step 1		
-	
-	
+	int sh_wid = 1; // shift 1 to 48 rounds per cycle
 	always_ff @(posedge clk) begin
 		if( wt_load ) begin
 			wt_reg <= message;						// Initally load with message 16 words
 		end else if( wt_shift ) begin
-			wt_reg <= { wt_reg[1:15], wt_next };// Create remaining 48 words as we shift wt
+			wt_reg[ 0] <= wt[ 0+sh_wid]; // Create remaining 48 words as we shift wt
+			wt_reg[ 1] <= wt[ 1+sh_wid];
+			wt_reg[ 2] <= wt[ 2+sh_wid];
+			wt_reg[ 3] <= wt[ 3+sh_wid];
+			wt_reg[ 4] <= wt[ 4+sh_wid];
+			wt_reg[ 5] <= wt[ 5+sh_wid];
+			wt_reg[ 6] <= wt[ 6+sh_wid];
+			wt_reg[ 7] <= wt[ 7+sh_wid];
+			wt_reg[ 8] <= wt[ 8+sh_wid];
+			wt_reg[ 9] <= wt[ 9+sh_wid];
+			wt_reg[10] <= wt[10+sh_wid];
+			wt_reg[11] <= wt[11+sh_wid];
+			wt_reg[12] <= wt[12+sh_wid];
+			wt_reg[13] <= wt[13+sh_wid];
+			wt_reg[14] <= wt[14+sh_wid];
+			wt_reg[15] <= wt[15+sh_wid];		
 		end else begin
 			wt_reg <= wt_reg;
 		end
@@ -104,68 +126,77 @@ module sha_core (
 	logic [0:7][31:0] acc_reg;
 	
 	// Round logic
-	reg   [31:0]  ch_e_f_g, maj_a_b_c, sig1_e, sig0_a;
-	reg   [31:0]  f1 ;    // roudn variable for sha-1
-	reg   [31:0]  da, db, dc, dd, de, df, dg, dh;
-	reg   [31:0]  qa, qb, qc, qd, qe, qf, qg, qh;
+	reg   [0:63][31:0]  ch_e_f_g, maj_a_b_c, sig1_e, sig0_a;
+	reg   [0:63][31:0]  da, db, dc, dd, de, df, dg, dh;
+	reg   [0:63][31:0]  qa, qb, qc, qd, qe, qf, qg, qh;
 
 	always_comb	begin
-		ch_e_f_g = 0;
-		maj_a_b_c = 0;
-		sig1_e = 0;
-		sig0_a = 0;
+//		ch_e_f_g = 0;
+//		maj_a_b_c = 0;
+//		sig1_e = 0;
+//		sig0_a = 0;
 
 		// starting hash
 		if( init_hash && hacc == 0 ) begin // load standard start value
-			{ da, db, dc, dd, de, df, dg, dh } = { 
-				32'h6a09e667, 
-				32'hbb67ae85, 
-				32'h3c6ef372, 
-				32'ha54ff53a, 
-				32'h510e527f, 
-				32'h9b05688c, 
-				32'h1f83d9ab, 
-				32'h5be0cd19 };   // Step 2 for 6.1.2 and 6.2.2
+			da[0] = 32'h6a09e667;
+			db[0] = 32'hbb67ae85;
+			dc[0] = 32'h3c6ef372;
+			dd[0] = 32'ha54ff53a;
+			de[0] = 32'h510e527f;
+			df[0] = 32'h9b05688c;
+			dg[0] = 32'h1f83d9ab;
+			dh[0] = 32'h5be0cd19;   // Step 2 for 6.1.2 and 6.2.2
 		end else if ( init_hash && hacc == 1 ) begin // load next hash to continue
-			da = hash_reg[0] + acc_reg[0];
-			db = hash_reg[1] + acc_reg[1];
-			dc = hash_reg[2] + acc_reg[2];
-			dd = hash_reg[3] + acc_reg[3];
-			de = hash_reg[4] + acc_reg[4];
-			df = hash_reg[5] + acc_reg[5];
-			dg = hash_reg[6] + acc_reg[6];
-			dh = hash_reg[7] + acc_reg[7];	
+			da[0] = hash_reg[0] + acc_reg[0];
+			db[0] = hash_reg[1] + acc_reg[1];
+			dc[0] = hash_reg[2] + acc_reg[2];
+			dd[0] = hash_reg[3] + acc_reg[3];
+			de[0] = hash_reg[4] + acc_reg[4];
+			df[0] = hash_reg[5] + acc_reg[5];
+			dg[0] = hash_reg[6] + acc_reg[6];
+			dh[0] = hash_reg[7] + acc_reg[7];	
 	   end else if( init_hash && hacc == 3 ) begin // load old hash to redo block
-			da = hash_reg[0];
-			db = hash_reg[1];
-			dc = hash_reg[2];
-			dd = hash_reg[3];
-			de = hash_reg[4];
-			df = hash_reg[5];
-			dg = hash_reg[6];
-			dh = hash_reg[7];			
+			da[0] = hash_reg[0];
+			db[0] = hash_reg[1];
+			dc[0] = hash_reg[2];
+			dd[0] = hash_reg[3];
+			de[0] = hash_reg[4];
+			df[0] = hash_reg[5];
+			dg[0] = hash_reg[6];
+			dh[0] = hash_reg[7];			
 		end else begin // else normal case feed from acc reg
-			{ da, db, dc, dd, de, df, dg, dh } = acc_reg;
+			{ da[0], db[0], dc[0], dd[0], de[0], df[0], dg[0], dh[0] } = acc_reg;
 		end
-			 
-      begin : _sha_logic  // step 3 of 6.2.2
-			ch_e_f_g = (de & df) ^ (~de & dg);
-			maj_a_b_c= (da & db) ^ ( da & dc) ^ (db & dc);
-			sig1_e   = { de[5:0], de[31:6] } ^ { de[10:0], de[31:11] } ^ { de[24:0], de[31:25] };
-			sig0_a   = { da[1:0], da[31:2] } ^ { da[12:0], da[31:13] } ^ { da[21:0], da[31:22] };
-			qa = ((dh + wt) + kt) + ( (ch_e_f_g + sig1_e) + (sig0_a + maj_a_b_c) );
-			qb = da;
-			qc = db;
-			qd = dc;
-			qe = ((dh + wt) + (kt + dd)) + (ch_e_f_g + sig1_e);
-			qf = de;
-			qg = df;
-			qh = dg;
+		
+		for( int ii = 0; ii < 64; ii++ ) begin : _sha_logic  // step 3 of 6.2.2
+			ch_e_f_g[ii] = (de[ii] & df[ii]) ^ (~de[ii] & dg[ii]);
+			maj_a_b_c[ii]= (da[ii] & db[ii]) ^ ( da[ii] & dc[ii]) ^ (db[ii] & dc[ii]);
+			sig1_e[ii]   = { de[ii][5:0], de[ii][31:6] } ^ { de[ii][10:0], de[ii][31:11] } ^ { de[ii][24:0], de[ii][31:25] };
+			sig0_a[ii]   = { da[ii][1:0], da[ii][31:2] } ^ { da[ii][12:0], da[ii][31:13] } ^ { da[ii][21:0], da[ii][31:22] };
+			qa[ii] = ((dh[ii] + wt[ii]) + kt[ii]) + ( (ch_e_f_g[ii] + sig1_e[ii]) + (sig0_a[ii] + maj_a_b_c[ii]) );
+			qb[ii] = da[ii];
+			qc[ii] = db[ii];
+			qd[ii] = dc[ii];
+			qe[ii] = ((dh[ii] + wt[ii]) + (kt[ii] + dd[ii])) + (ch_e_f_g[ii] + sig1_e[ii]);
+			qf[ii] = de[ii];
+			qg[ii] = df[ii];
+			qh[ii] = dg[ii];
+			if( ii > 0 ) begin
+				da[ii] = qa[ii-1];
+				db[ii] = qb[ii-1];
+				dc[ii] = qc[ii-1];
+				dd[ii] = qd[ii-1];
+				de[ii] = qe[ii-1];
+				df[ii] = qf[ii-1];
+				dg[ii] = qg[ii-1];
+				dh[ii] = qh[ii-1];
+			end
       end
 	end	
 
+	int idx = 0; // select output tap
 	always_ff @(posedge clk) begin
-		acc_reg <= { qa, qb, qc, qd, qe, qf, qg, qh };
+		acc_reg <= { qa[idx], qb[idx], qc[idx], qd[idx], qe[idx], qf[idx], qg[idx], qh[idx] };
 	end
 	
 	always_ff @(posedge clk) begin
@@ -176,7 +207,7 @@ module sha_core (
 		end else if( hacc == 3 ) begin // keep the old hash, we're reoding this block with updated message
 				hash_reg <= hash_reg;
 		end else if( init_hash ) begin // loads std Hashes into reg for for future acc
-			hash_reg <= { da, db, dc, dd, de, df, dg, dh };
+			hash_reg <= { da[0], db[0], dc[0], dd[0], de[0], df[0], dg[0], dh[0] };
 		end else begin
 			hash_reg <= hash_reg;
 		end
