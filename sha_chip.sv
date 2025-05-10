@@ -317,8 +317,26 @@ assign speaker_n = !speaker;
 	// Latch output hash for display
 	always_ff @(posedge clk) 
 		hash <= ( ovalid ) ? sha_out : hash;
-	
-	
+
+	logic ovalid2;
+	logic [255:0] sha_out2;
+	sha_core _sha_core2 (
+		.clk ( clk ),
+		.reset( reset ),
+		// Input strobe and message
+		.in_valid( ovalid ),
+		.redo( 1'b1 ),
+		.message( { hash, 256'h80000000_00000000_00000000_00000000_00000000_00000000_00000000_00000100 } ),
+		// Output 
+		.out_valid( ovalid2 ),
+		.hash( sha_out2 )
+	);	
+
+	// Latch output hash for display
+	logic [255:0] hash2;
+	always_ff @(posedge clk) 
+		hash2 <= ( ovalid2 ) ? sha_out2 : hash2;
+		
 	///////////////////////////////////////
 	// Stat counter timer and rate counters
 	///////////////////////////////////////
@@ -469,7 +487,7 @@ assign speaker_n = !speaker;
 
 
 	// Overlay Text - Dynamic
-	logic [9:0] id_str;
+	logic [10:0] id_str;
 	string_overlay #(.LEN(18)) _id0(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('h48), .y('h09), .out( id_str[0]), .str( "FIPS 180-4 SHA-256" ) );
 	hex_overlay    #(.LEN(12 )) _id1(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('h50),.y('d58), .out( id_str[1]), .in( op_count[47:0] ) );
    //bin_overlay    #(.LEN(1 )) _id2(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.bin_char(bin_char), .x('h46),.y('h09), .out( id_str[2]), .in( disp_id == 32'h0E96_0001 ) );
@@ -482,6 +500,7 @@ assign speaker_n = !speaker;
 	hex_overlay #(.LEN(128)) _id7(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d16), .out( id_str[7]), .in( ibuf[0] ) );
 	hex_overlay #(.LEN(128)) _id8(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d18), .out( id_str[8]), .in( ibuf[1] ) );
 	hex_overlay #(.LEN(64 )) _id9(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d20), .out( id_str[9]), .in( hash    ) );
+	hex_overlay #(.LEN(64 )) _id10(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d22), .out( id_str[10]),.in( hash2    ) );
 	
 	
 
