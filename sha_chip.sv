@@ -259,6 +259,22 @@ assign speaker_n = !speaker;
 	assign msg_idx = ( state_count == 66 ) ? 1'b1 : 1'b0;
 	assign mode    = ( state_count == 2 ) ? MODE_INIT : MODE_REDO;
 	
+	
+	// Padded Input Message (2 blocks)
+	logic [0:1][0:63][7:0] bc_msg; // endian byte stram
+	logic [0:1][0:15][31:0] in_msg;	// SHA input format
+	assign bc_msg[0] = 512'h000000014cc2c57c7905fd399965282c87fe259e7da366e035dc087a0000141f000000006427b6492f2b052578fb4bc23655ca4e8b9e2b9b69c88041b2ac8c77;
+	assign bc_msg[1] = 512'h1571d1be4de695931a2694217a33330e000000800000000000000000000000000000000000000000000000000000000000000000000000000000000080020000;
+
+	always_comb begin
+		for( int bb = 0; bb < 2; bb++ ) // block
+			for( int ww = 0; ww < 16; ww++ ) // 32 bit words
+				in_msg[bb][ww][31:0] = { bc_msg[bb][ww*4+3], bc_msg[bb][ww*4+2], bc_msg[bb][ww*4+1], bc_msg[bb][ww*4+0] };
+	end
+	// Extract difficulty
+	logic [255:0] difficulty;
+	assign difficulty = bc_msg[1][9:11]<<((bc_msg[1][8]-3)<<3);
+	
 	// Load input buffer and increment nonce
 	logic [31:0] nonce;
 	always_ff @(posedge clk) begin
@@ -267,23 +283,25 @@ assign speaker_n = !speaker;
 			nonce <= 0;
 		end else if( get_msg ) begin
 			nonce[3:0] <= nonce[3:0] + 1;
+			ibuf[0] <= in_msg[0];
+			ibuf[1] <= in_msg[1] + { 96'h0, 28'h0, nonce[3:0], 384'h0 };
 			//ibuf[0] <= 512'h000000014cc2c57c7905fd399965282c87fe259e7da366e035dc087a0000141f000000006427b6492f2b052578fb4bc23655ca4e8b9e2b9b69c88041b2ac8c77;
-			ibuf[0] <= {	32'h61626364,	// "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq" 
-							32'h62636465,
-							32'h63646566,
-							32'h64656667,
-							32'h65666768,
-							32'h66676869,
-							32'h6768696A,
-							32'h68696A6B,
-							32'h696A6B6C,
-							32'h6A6B6C6D,
-							32'h6B6C6D6E,
-							32'h6C6D6E6F,
-							32'h6D6E6F70,
-							32'h6E6F7071,
-							32'h80000000,
-							32'h00000000  };
+			//ibuf[0] <= {	32'h61626364,	// "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq" 
+			//				32'h62636465,
+			//				32'h63646566,
+			//				32'h64656667,
+			//				32'h65666768,
+			//				32'h66676869,
+			//				32'h6768696A,
+			//				32'h68696A6B,
+			//				32'h696A6B6C,
+			//				32'h6A6B6C6D,
+			//				32'h6B6C6D6E,
+			//				32'h6C6D6E6F,
+			//				32'h6D6E6F70,
+			//				32'h6E6F7071,
+			//				32'h80000000,
+			//				32'h00000000  };
 
 			
 			
@@ -293,22 +311,22 @@ assign speaker_n = !speaker;
 			//				128'h00000000000000000000000000000000,
 			//				 64'h0000000000000000,
 			//				 64'h0000000080020000 };	
-			ibuf[1] <= {	nonce , //32'h00000000,	// "padding"
-							32'h00000000,
-							32'h00000000,
-							32'h00000000,
-							32'h00000000,
-							32'h00000000,
-							32'h00000000,
-							32'h00000000,
-							32'h00000000,
-							32'h00000000,
-							32'h00000000,
-							32'h00000000,
-							32'h00000000,
-							32'h00000000,
-							32'h00000000,
-							32'h000001C0  };
+			//ibuf[1] <= {	nonce , //32'h00000000,	// "padding"
+			//				32'h00000000,
+			//				32'h00000000,
+			//				32'h00000000,
+			//				32'h00000000,
+			//				32'h00000000,
+			//				32'h00000000,
+			//				32'h00000000,
+			//				32'h00000000,
+			//				32'h00000000,
+			//				32'h00000000,
+			//				32'h00000000,
+			//				32'h00000000,
+			//				32'h00000000,
+			//				32'h00000000,
+			//				32'h000001C0  };
  
 		end
 	end
@@ -346,9 +364,16 @@ assign speaker_n = !speaker;
 	);	
 
 	// Latch output hash for display
-	logic [255:0] hash2;
+	logic [0:7][31:0] hash2;
 	always_ff @(posedge clk) 
 		hash2 <= ( ovalid2 ) ? sha_out2 : hash2;
+		
+	logic [7:0][31:0] hash_word;
+	
+	always_comb 
+		for( int ii = 0; ii < 8; ii++ )
+			hash_word[ii] = hash2[ii];
+	
 		
 	///////////////////////////////////////
 	// Stat counter timer and rate counters
@@ -500,7 +525,7 @@ assign speaker_n = !speaker;
 
 
 	// Overlay Text - Dynamic
-	logic [10:0] id_str;
+	logic [12:0] id_str;
 	string_overlay #(.LEN(18)) _id0(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('h48), .y('h09), .out( id_str[0]), .str( "FIPS 180-4 SHA-256" ) );
 	hex_overlay    #(.LEN(12 )) _id1(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('h50),.y('d58), .out( id_str[1]), .in( op_count[47:0] ) );
    //bin_overlay    #(.LEN(1 )) _id2(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.bin_char(bin_char), .x('h46),.y('h09), .out( id_str[2]), .in( disp_id == 32'h0E96_0001 ) );
@@ -514,6 +539,8 @@ assign speaker_n = !speaker;
 	hex_overlay #(.LEN(128)) _id8(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d18), .out( id_str[8]), .in( ibuf[1] ) );
 	hex_overlay #(.LEN(64 )) _id9(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d20), .out( id_str[9]), .in( hash    ) );
 	hex_overlay #(.LEN(64 )) _id10(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d22), .out( id_str[10]),.in( hash2    ) );
+	hex_overlay #(.LEN(64 )) _id11(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d24), .out( id_str[11]),.in( hash_word  ) );
+	hex_overlay #(.LEN(64 )) _id12(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d26), .out( id_str[12]),.in( difficulty  ) );
 	
 	
 
