@@ -257,7 +257,7 @@ assign speaker_n = !speaker;
 			ibuf <= 0;
 			nonce <= 0;
 		end else if( get_msg ) begin
-			nonce <= nonce + 1;
+			nonce[3:0] <= nonce[3:0] + 1;
 			//ibuf[0] <= 512'h000000014cc2c57c7905fd399965282c87fe259e7da366e035dc087a0000141f000000006427b6492f2b052578fb4bc23655ca4e8b9e2b9b69c88041b2ac8c77;
 			ibuf[0] <= {	32'h61626364,	// "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq" 
 							32'h62636465,
@@ -330,7 +330,7 @@ assign speaker_n = !speaker;
 		// Input strobe and message
 		.in_valid( ovalid ),
 		.mode ( MODE_INIT ),
-		.message( { hash, 256'h80000000_00000000_00000000_00000000_00000000_00000000_00000000_00000100 } ),
+		.message( { sha_out, 256'h80000000_00000000_00000000_00000000_00000000_00000000_00000000_00000100 } ),
 		// Output 
 		.out_valid( ovalid2 ),
 		.hash( sha_out2 )
