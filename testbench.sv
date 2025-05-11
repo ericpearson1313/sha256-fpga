@@ -57,14 +57,18 @@ module testbench( );
 		logic ovalid;
 		logic [511:0] msg;
 		logic ivalid;
-		logic redo;
+		logic [1:0] mode;
+		
+	localparam MODE_INIT = 1;	// Will init with H* at start (both input and REG)
+	localparam MODE_HASH = 0;	// starts with REG and will Update reg at END (Normal steady state(
+	localparam MODE_REDO = 3;  // starts with Reg, but discards value at end (keeping REG unaltered for REDO
 		
 	 	sha_core _uut (
 			.clk ( clk ),
 			.reset( reset ),
 		// Input strobe and message
 			.in_valid( ivalid ),
-			.redo( redo ),
+			.mode( mode ),
 			.message( msg ),
 		// Output 
 			.out_valid( ovalid ),
@@ -84,7 +88,7 @@ module testbench( );
 		// reset signals
 		msg = 0;
 		ivalid = 0;
-		redo = 0;
+		mode = 0;
 		
       // wwait for reset de-assert
 		while( reset ) @(posedge clk);
@@ -110,7 +114,7 @@ module testbench( );
 						32'h00000000,
 						32'h00000000,
 						32'h00000018  };
-						
+		mode = MODE_INIT; // first cycle		
 		for( int ii = 0; ii < 65; ii++ ) begin
 			ivalid = ( ii == 0 ) ? 1'b1 : 1'b0;
 			@( posedge clk );
@@ -123,9 +127,11 @@ module testbench( );
 		// and some clock cycles
       for( int ii = 0; ii < 15; ii++ ) @(posedge clk); // +15 cycles		
 				
+
 		for( int ii = 0; ii < 129; ii++ ) begin
 			ivalid = ( ii == 0 || ii == 64 ) ? 1'b1 : 1'b0;
 			if( ii == 0 ) begin
+			mode = MODE_INIT;			
 			msg = {	32'h61626364,	// "abc"
 						32'h62636465,
 						32'h63646566,
@@ -143,6 +149,7 @@ module testbench( );
 						32'h80000000,
 						32'h00000000  };
 			end else if ( ii == 64 ) begin
+			mode = MODE_HASH;
 			msg = {	32'h00000000,	// "abc"
 						32'h00000000,
 						32'h00000000,
@@ -236,11 +243,16 @@ module testbench( );
 	
 		// Run through 2 blocks 
 		msg = in_msg[0];
+		mode = MODE_INIT;
 		for( int ii = 0; ii < 64; ii++ ) begin
 			ivalid = ( ii == 0 ) ? 1'b1 : 1'b0;
 			@( posedge clk );
 		end
+			@( posedge clk );
+			@( posedge clk );
+		
 		msg = in_msg[1];
+		mode = MODE_HASH;
 		for( int ii = 0; ii < 64; ii++ ) begin
 			ivalid = ( ii == 0 ) ? 1'b1 : 1'b0;
 			@( posedge clk );
@@ -263,6 +275,7 @@ module testbench( );
 		
 		
 		msg = in_msg[2]; 
+		mode = MODE_INIT;
 		for( int ii = 0; ii < 64; ii++ ) begin
 			ivalid = ( ii == 0 ) ? 1'b1 : 1'b0;
 			@( posedge clk );

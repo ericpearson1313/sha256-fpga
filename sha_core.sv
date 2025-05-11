@@ -3,26 +3,33 @@ module sha_core (
 	input logic reset,
 	// Input strobe and message
 	input logic 		  in_valid,
-	input logic			  redo, // indicates keep same input hash
+	input logic	[1:0]		  mode, 
 	input logic [511:0] message,
 	// Output 
 	output logic         out_valid,
 	output logic [0:7][31:0] hash
 	);
 	
+	localparam MODE_INIT = 1;	// Will init with H* at start (both input and REG)
+	localparam MODE_HASH = 0;	// starts with REG and will Update reg at END (Normal steady state(
+	localparam MODE_REDO = 3;  // starts with Reg, but discards value at end (keeping REG unaltered for REDO
+	
+
 	// Control logic
 	logic kt_shift;	
 	logic wt_shift;
 	logic wt_load;	
 	logic init_hash;	
-	logic [1:0] hacc; // operation at init hash: 0 new block, 1 next block, 3 redo last block
+	logic [1:0] mode_start;
+	logic [1:0] mode_done;
+
 	
 	logic [65:0] t;
-	logic [65:0] r;
+	logic [65:0][1:0] md;
 	
 	always_ff @(posedge clk) begin
-		t <= { t[64:0], in_valid };
-		r <= { r[64:0], in_valid & redo };
+		t <=  {  t[64:0], in_valid };
+		md <= { md[64:0], mode     };
 	end
 	
 	assign out_valid = t[64];
@@ -30,7 +37,9 @@ module sha_core (
 	assign wt_load = in_valid;
 	assign wt_shift = |t[62:0];
 	assign init_hash = t[0];
-	assign hacc[1:0] = { t[64] & r[64], t[64] };
+	assign mode_start = md[0];
+	assign done = t[64];
+	assign mode_done = md[64];
 	
 	///////
 	// Kt
@@ -40,7 +49,7 @@ module sha_core (
 	logic	[0:63][31:0] kt;
 	assign kt = kt_reg;
 	
-	int sh_wid = 2; // shift 1 to 48 rounds per cycle	
+	int sh_wid = 1; // shift 1 to 48 rounds per cycle	
 
 	always_ff @(posedge clk) begin
 		if( reset ) begin
@@ -62,7 +71,10 @@ module sha_core (
 							 32'h90befffa, 32'ha4506ceb, 32'hbef9a3f7, 32'hc67178f2 };	
 		end else if( kt_shift ) begin
 			for( int ii = 0; ii < 64; ii++ ) begin
-					kt_reg[ii] = kt_reg[(ii+sh_wid)%64];
+					if( ii+sh_wid >= 64 )
+						kt_reg[ii] <= kt_reg[ii+sh_wid-64];
+					else
+						kt_reg[ii] <= kt_reg[ii+sh_wid];
 			end
 			//kt_reg <= { kt_reg[1:63], kt_reg[0] }; // shift/Rotate through the values kt. ROM maybe?
 		end else begin
@@ -102,7 +114,7 @@ module sha_core (
 		if( wt_load ) begin
 			wt_reg <= message;						// Initally load with message 16 words
 		end else if( wt_shift ) begin
-			for( int ii = 0; ii < 15; ii++ ) begin
+			for( int ii = 0; ii < 16; ii++ ) begin
 				wt_reg[ii] = wt[ii+sh_wid];
 			end
 		end else begin
@@ -129,7 +141,7 @@ module sha_core (
 //		sig0_a = 0;
 
 		// starting hash
-		if( init_hash && hacc == 0 ) begin // load standard start value
+		if( init_hash && mode_start == MODE_INIT ) begin // load standard start value
 			da[0] = 32'h6a09e667;
 			db[0] = 32'hbb67ae85;
 			dc[0] = 32'h3c6ef372;
@@ -138,7 +150,7 @@ module sha_core (
 			df[0] = 32'h9b05688c;
 			dg[0] = 32'h1f83d9ab;
 			dh[0] = 32'h5be0cd19;   // Step 2 for 6.1.2 and 6.2.2
-		end else if ( init_hash && hacc == 1 ) begin // load next hash to continue
+		end else if ( init_hash && done ) begin // overlap start/end non init, use sum
 			da[0] = hash_reg[0] + acc_reg[0];
 			db[0] = hash_reg[1] + acc_reg[1];
 			dc[0] = hash_reg[2] + acc_reg[2];
@@ -147,7 +159,7 @@ module sha_core (
 			df[0] = hash_reg[5] + acc_reg[5];
 			dg[0] = hash_reg[6] + acc_reg[6];
 			dh[0] = hash_reg[7] + acc_reg[7];	
-	   end else if( init_hash && hacc == 3 ) begin // load old hash to redo block
+	   end else if( init_hash ) begin // load current hash
 			da[0] = hash_reg[0];
 			db[0] = hash_reg[1];
 			dc[0] = hash_reg[2];
@@ -191,14 +203,19 @@ module sha_core (
 	end
 	
 	always_ff @(posedge clk) begin
-		if( hacc == 1 ) begin // accumulate and hold this hash
+		if( init_hash && mode_start == MODE_INIT ) begin // load H* if first sha round
+			hash_reg[0] = 32'h6a09e667;
+			hash_reg[1] = 32'hbb67ae85;
+			hash_reg[2] = 32'h3c6ef372;
+			hash_reg[3] = 32'ha54ff53a;
+			hash_reg[4] = 32'h510e527f;
+			hash_reg[5] = 32'h9b05688c;
+			hash_reg[6] = 32'h1f83d9ab;
+			hash_reg[7] = 32'h5be0cd19;		
+		end else if( done && mode_done != MODE_REDO  ) begin // accumulate and hold this hash, but discard on REDO
 			for( int ii = 0 ; ii < 8; ii++ ) begin
 				hash_reg[ii] <= hash_reg[ii] + acc_reg[ii];
 			end
-		end else if( hacc == 3 ) begin // keep the old hash, we're reoding this block with updated message
-				hash_reg <= hash_reg;
-		end else if( init_hash ) begin // loads std Hashes into reg for for future acc
-			hash_reg <= { da[0], db[0], dc[0], dd[0], de[0], df[0], dg[0], dh[0] };
 		end else begin
 			hash_reg <= hash_reg;
 		end
@@ -206,7 +223,7 @@ module sha_core (
 	
 	always_comb begin
 		for( int ii = 0 ; ii < 8; ii++ ) begin
-			hash[ii] <= hash_reg[ii] + acc_reg[ii]; // output is always the sum
+			hash[ii] = hash_reg[ii] + acc_reg[ii]; // output is always the sum
 		end
 	end
 	
