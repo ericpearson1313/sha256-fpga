@@ -49,7 +49,7 @@ module sha_core (
 	logic	[0:63][31:0] kt;
 	assign kt = kt_reg;
 	
-	int sh_wid = 1; // shift 1 to 48 rounds per cycle	
+	int sh_wid = 11; // shift 1 to 48 rounds per cycle	
 
 	always_ff @(posedge clk) begin
 		if( reset ) begin
