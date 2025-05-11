@@ -248,7 +248,7 @@ assign speaker_n = !speaker;
 	assign get_msg = ( state_count == 1 || ( state_count == 129 && sha_go ) ) ? 1'b1 : 1'b0;
 	assign  ld_msg = ( state_count == 2 || state_count == 66 ) ? 1'b1 : 1'b0;
 	assign msg_idx = ( state_count == 66 ) ? 1'b1 : 1'b0;
-	assign redo    = ( state_count == 2 ) ? MODE_INIT : MODE_REDO;
+	assign mode    = ( state_count == 2 ) ? MODE_INIT : MODE_REDO;
 	
 	// Load input buffer and increment nonce
 	logic [31:0] nonce;
