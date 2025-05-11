@@ -222,8 +222,12 @@ assign speaker_n = !speaker;
 	logic ld_msg;	// Load message into sha unit
 	logic	msg_idx; 
 	logic sha_go;
-	logic redo; // means don't hold this hash for future accumulation, we can redo.
+	logic [1:0] mode; 
 	
+	localparam MODE_INIT = 1;	// Will init with H* at start (both input and REG)
+	localparam MODE_HASH = 0;	// starts with REG and will Update reg at END (Normal steady state(
+	localparam MODE_REDO = 3;  // starts with Reg, but discards value at end (keeping REG unaltered for REDO
+		
 	assign sha_go = short_fire || long_fire;
 	
 	logic [7:0] state_count;
@@ -244,7 +248,7 @@ assign speaker_n = !speaker;
 	assign get_msg = ( state_count == 1 || ( state_count == 129 && sha_go ) ) ? 1'b1 : 1'b0;
 	assign  ld_msg = ( state_count == 2 || state_count == 66 ) ? 1'b1 : 1'b0;
 	assign msg_idx = ( state_count == 66 ) ? 1'b1 : 1'b0;
-	assign redo    = ( state_count == 66 ) ? 1'b1 : 1'b0;
+	assign redo    = ( state_count == 2 ) ? MODE_INIT : MODE_REDO;
 	
 	// Load input buffer and increment nonce
 	logic [31:0] nonce;
@@ -307,7 +311,7 @@ assign speaker_n = !speaker;
 		.reset( reset ),
 		// Input strobe and message
 		.in_valid( ld_msg ),
-		.redo( redo ),
+		.mode( mode ),
 		.message( (msg_idx)?ibuf[1]:ibuf[0] ),
 		// Output 
 		.out_valid( ovalid ),
@@ -325,7 +329,7 @@ assign speaker_n = !speaker;
 		.reset( reset ),
 		// Input strobe and message
 		.in_valid( ovalid ),
-		.redo( 1'b1 ),
+		.mode ( MODE_INIT ),
 		.message( { hash, 256'h80000000_00000000_00000000_00000000_00000000_00000000_00000000_00000100 } ),
 		// Output 
 		.out_valid( ovalid2 ),
