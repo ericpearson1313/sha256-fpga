@@ -75,10 +75,10 @@ module testbench( );
 			.hash( hash )
 		);
 		
-		logic [0:2][0:7][31:0] hash_out;
+		logic [0:3][0:7][31:0] hash_out;
 		always_ff @(posedge clk) 
 			if( ovalid ) 
-				hash_out <= { hash_out[1:2], hash };
+				hash_out <= { hash_out[1:3], hash };
 
 	logic [0:3][0:63][7:0] bc_msg; 
 	logic [0:2][0:15][31:0] in_msg;				
@@ -122,14 +122,14 @@ module testbench( );
 		
 
 		
-		// Test #2 - Two block NIST message sample
+		// Test #2 - Two block NIST message sample, with 2nd block repeated via REDO
 		
 		// and some clock cycles
       for( int ii = 0; ii < 15; ii++ ) @(posedge clk); // +15 cycles		
 				
 
-		for( int ii = 0; ii < 129; ii++ ) begin
-			ivalid = ( ii == 0 || ii == 64 ) ? 1'b1 : 1'b0;
+		for( int ii = 0; ii < (3*64+1); ii++ ) begin
+			ivalid = ( ii == 0 || ii == 64 || ii == 128 ) ? 1'b1 : 1'b0;
 			if( ii == 0 ) begin
 			mode = MODE_INIT;			
 			msg = {	32'h61626364,	// "abc"
@@ -148,8 +148,8 @@ module testbench( );
 						32'h6E6F7071,
 						32'h80000000,
 						32'h00000000  };
-			end else if ( ii == 64 ) begin
-			mode = MODE_HASH;
+			end else if ( ii == 64 || ii == 128 ) begin
+			mode = ( ii == 64 ) ? MODE_REDO : MODE_HASH;
 			msg = {	32'h00000000,	// "abc"
 						32'h00000000,
 						32'h00000000,
@@ -172,6 +172,9 @@ module testbench( );
 
 		// and some clock cycles
       for( int ii = 0; ii < 15; ii++ ) @(posedge clk); // +15 cycles		
+
+		for( int ii = 0; ii < 4; ii++ ) 
+			$display("hash_out[%d] = %h\n", ii, hash_out[ii] );
 		
 		// Evaluate Results
 		if( hash_out[0] != { 32'hBA7816BF, 
@@ -211,6 +214,18 @@ module testbench( );
 		else
 				$display("Passed 3 \n");					
 
+
+		if( hash_out[3] != { 32'h248D6A61, // shoudl be same if REDO
+									32'hD20638B8, 
+									32'hE5C02693, 
+									32'h0C3E6039, 
+									32'hA33CE459, 
+									32'h64FF2167, 
+									32'hF6ECEDD4, 
+									32'h19DB06C1 } ) 
+				$display("ERROR: two buffer message, REDO final hash\n");	
+		else
+				$display("Passed 4 \n");					
 				
 		/////////////////////////////////////////////////////////////		
 		// Test #3 - Two block sample 80 byte message with nonce
@@ -249,7 +264,6 @@ module testbench( );
 			@( posedge clk );
 		end
 			@( posedge clk );
-			@( posedge clk );
 		
 		msg = in_msg[1];
 		mode = MODE_HASH;
@@ -263,14 +277,14 @@ module testbench( );
 		
 		// Take last hash and feed it into SHA as a message
 		
-		in_msg[2] = { hash_out[2][0], 
-						  hash_out[2][1],
-						  hash_out[2][2],
-						  hash_out[2][3],
-						  hash_out[2][4],
-						  hash_out[2][5],
-						  hash_out[2][6],
-  						  hash_out[2][7],
+		in_msg[2] = { hash_out[3][0], 
+						  hash_out[3][1],
+						  hash_out[3][2],
+						  hash_out[3][3],
+						  hash_out[3][4],
+						  hash_out[3][5],
+						  hash_out[3][6],
+  						  hash_out[3][7],
 						  256'h80000000_00000000_00000000_00000000_00000000_00000000_00000000_00000100 };
 		
 		
@@ -288,12 +302,12 @@ module testbench( );
 		$display ("blk2 = %h\n", in_msg[1] );
 		$display ("blk3 = %h\n", in_msg[2] );			
 		
-		$display ("hash_out[0] = %h\n", hash_out[0] );
-		$display ("hash_out[1] = %h\n", hash_out[1] );
-		$display ("hash_out[2] = %h\n", hash_out[2] );	
+		$display ("hash_out[0] = %h\n", hash_out[1] );
+		$display ("hash_out[1] = %h\n", hash_out[2] );
+		$display ("hash_out[2] = %h\n", hash_out[3] );	
 
 		// check midstate is expected
-		if( hash_out[0] != { 32'haf41f790, 32'hf106abb3, 32'hc8c582a5, 32'h61a5e75e, 
+		if( hash_out[1] != { 32'haf41f790, 32'hf106abb3, 32'hc8c582a5, 32'h61a5e75e, 
 									32'ha7252b91, 32'h60c009cd, 32'h2a3c9ba8, 32'h228ea473 } ) 
 				$display("ERROR: Wronge expected midstate\n");
 		else
@@ -301,7 +315,7 @@ module testbench( );
 			
 
 		// Check HASH passes difficulty
-		if( hash_out[2][7] != 32'h00000000 ) 
+		if( hash_out[3][7] != 32'h00000000 ) 
 				$display("ERROR: failed difficulty\n");
 		else
 				$display("Pass: passes difficulty\n");		
@@ -313,7 +327,7 @@ module testbench( );
 		$display("Diffculty exp: %h, thresh %h\n", bc_msg[1][8], bc_msg[1][9:11] );
 		
 		for( int ii = bc_msg[1][8]+1; ii < 32; ii++ )
-			$display( "zero byte %d = %h\n", ii, hash_out[2][ii>>2][8*(ii&3)+7-:8] );		
+			$display( "zero byte %d = %h\n", ii, hash_out[3][ii>>2][8*(ii&3)+7-:8] );		
 		
 		
 		// Stop Sim in a bit
