@@ -228,7 +228,16 @@ assign speaker_n = !speaker;
 	localparam MODE_HASH = 0;	// starts with REG and will Update reg at END (Normal steady state(
 	localparam MODE_REDO = 3;  // starts with Reg, but discards value at end (keeping REG unaltered for REDO
 		
-	assign sha_go = short_fire || long_fire;
+	// Press and hold (long push) turns on continuous mode and the button can be released.
+	// Press button again to stop
+	logic continuous;
+	always_ff @(posedge clk) 
+		continuous <=  ( reset ) ? 1'b0 : 
+							( long_fire ) ? 1'b1 : 
+							( short_fire ) ? 1'b0 : 
+							           continuous;
+
+	assign sha_go = short_fire || continuous;
 	
 	logic [7:0] state_count;
 	always_ff @(posedge clk) begin
