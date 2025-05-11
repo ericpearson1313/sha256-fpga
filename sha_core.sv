@@ -150,7 +150,7 @@ module sha_core (
 			df[0] = 32'h9b05688c;
 			dg[0] = 32'h1f83d9ab;
 			dh[0] = 32'h5be0cd19;   // Step 2 for 6.1.2 and 6.2.2
-		end else if ( init_hash && done ) begin // overlap start/end non init, use sum
+		end else if ( init_hash && done & mode_done != MODE_REDO ) begin // overlap start/end non init, use sum to continue but not if REDO
 			da[0] = hash_reg[0] + acc_reg[0];
 			db[0] = hash_reg[1] + acc_reg[1];
 			dc[0] = hash_reg[2] + acc_reg[2];
