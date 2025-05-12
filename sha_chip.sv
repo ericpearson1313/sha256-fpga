@@ -212,7 +212,8 @@ assign speaker_n = !speaker;
 
 	// Key data structures
 	// two 512 bit message blocks
-	logic [0:1][0:63][7:0] ibuf;
+	logic [0:1][0:15][31:0] ibuf;
+
 	// 256 bit sha2 message hash
 	logic [255:0] hash;
 
@@ -223,6 +224,9 @@ assign speaker_n = !speaker;
 	logic	msg_idx; 
 	logic sha_go;
 	logic [1:0] mode; 
+	logic hit;	// tags when hash2 hits
+	logic ld_hit; // loads nonce register  with delayed nonce
+	
 	
 	localparam MODE_INIT = 1;	// Will init with H* at start (both input and REG)
 	localparam MODE_HASH = 0;	// starts with REG and will Update reg at END (Normal steady state(
@@ -235,7 +239,7 @@ assign speaker_n = !speaker;
 		continuous <=  ( reset ) ? 1'b0 : 
 							( long_fire ) ? 1'b1 : 
 							( short_fire ) ? 1'b0 : 
-							           continuous;
+							          !hit & continuous;
 
 	assign sha_go = short_fire || continuous;
 	
@@ -244,7 +248,9 @@ assign speaker_n = !speaker;
 		if( reset ) begin
 			state_count <= 0;
 		end else begin
-			if( state_count == 0 ) begin
+			if( hit && continuous ) begin
+				state_count <= 0;
+			end else if( state_count == 0 ) begin
 				state_count <= ( sha_go ) ? 1 : 0;
 			end else if( state_count == 129 ) begin
 				state_count <= ( sha_go ) ? 66 : 0; // redo
@@ -275,61 +281,50 @@ assign speaker_n = !speaker;
 	logic [255:0] difficulty;
 	assign difficulty = bc_msg[1][9:11]<<((bc_msg[1][8]-3)<<3);
 	
-	// Load input buffer and increment nonce
-	logic [31:0] nonce;
+	// Load input buffer message
 	always_ff @(posedge clk) begin
 		if( reset ) begin
 			ibuf <= 0;
-			nonce <= 0;
 		end else if( get_msg ) begin
-			nonce[3:0] <= nonce[3:0] + 1;
 			ibuf[0] <= in_msg[0];
-			ibuf[1] <= in_msg[1] + { 96'h0, 28'h0, nonce[3:0], 384'h0 };
-			//ibuf[0] <= 512'h000000014cc2c57c7905fd399965282c87fe259e7da366e035dc087a0000141f000000006427b6492f2b052578fb4bc23655ca4e8b9e2b9b69c88041b2ac8c77;
-			//ibuf[0] <= {	32'h61626364,	// "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq" 
-			//				32'h62636465,
-			//				32'h63646566,
-			//				32'h64656667,
-			//				32'h65666768,
-			//				32'h66676869,
-			//				32'h6768696A,
-			//				32'h68696A6B,
-			//				32'h696A6B6C,
-			//				32'h6A6B6C6D,
-			//				32'h6B6C6D6E,
-			//				32'h6C6D6E6F,
-			//				32'h6D6E6F70,
-			//				32'h6E6F7071,
-			//				32'h80000000,
-			//				32'h00000000  };
-
-			
-			
-			//ibuf[1] <= { 96'h1571d1be4de695931a269421, 
-			//					nonce[31:0],  
-			//            128'h00000080000000000000000000000000,
-			//				128'h00000000000000000000000000000000,
-			//				 64'h0000000000000000,
-			//				 64'h0000000080020000 };	
-			//ibuf[1] <= {	nonce , //32'h00000000,	// "padding"
-			//				32'h00000000,
-			//				32'h00000000,
-			//				32'h00000000,
-			//				32'h00000000,
-			//				32'h00000000,
-			//				32'h00000000,
-			//				32'h00000000,
-			//				32'h00000000,
-			//				32'h00000000,
-			//				32'h00000000,
-			//				32'h00000000,
-			//				32'h00000000,
-			//				32'h00000000,
-			//				32'h00000000,
-			//				32'h000001C0  };
- 
+			ibuf[1] <= in_msg[1];						
 		end
 	end
+	
+	// Nonce handling
+	logic [31:0] nonce;
+	logic [0:4][31:0] nonce_pipe;
+	always_ff @(posedge clk) begin
+		if( reset ) begin
+			nonce <= 32'h7a33330e; // orig endian
+			nonce_pipe <= 0;
+		end else begin	
+			// Nonce creations
+			if( hit && continuous ) begin
+				nonce <= nonce_pipe[2];
+			end else if( ld_msg & msg_idx ) begin
+				nonce[31:4] <= nonce[31:4];
+				nonce[3:0] <= nonce[3:0] + 1;
+			end else begin
+				nonce <= nonce;
+			end
+								
+			// Pipeline of Nonces
+			nonce_pipe[0] <= ( ld_msg ) ? nonce : nonce_pipe[0];	// Sha1
+			nonce_pipe[1] <= ( ovalid ) ? nonce_pipe[0] : nonce_pipe[1]; // Sha2
+			nonce_pipe[2] <= ( ovalid ) ? nonce_pipe[1] : nonce_pipe[2]; // delayed
+			nonce_pipe[3] <= ( ovalid ) ? nonce_pipe[2] : nonce_pipe[3]; // delayed
+			nonce_pipe[4] <= ( ovalid ) ? nonce_pipe[3] : nonce_pipe[4]; // delayed
+		end
+	end
+
+	// Insert nonce into  MSG, swaping ending
+	logic [0:15][31:0] ibuf_nonce;
+	assign ibuf_nonce = { 	
+			ibuf[1][0:2], 
+			nonce[7:0], nonce[15:8], nonce[23:16], nonce[31:24], 
+			ibuf[1][4:15] 
+			};
 	
 	logic ovalid;
 	logic [255:0] sha_out;	
@@ -339,11 +334,12 @@ assign speaker_n = !speaker;
 		// Input strobe and message
 		.in_valid( ld_msg ),
 		.mode( mode ),
-		.message( (msg_idx)?ibuf[1]:ibuf[0] ),
+		.message( (msg_idx) ? ibuf_nonce : ibuf[0] ),
 		// Output 
 		.out_valid( ovalid ),
 		.hash( sha_out )
 	);
+	
 
 	// Latch output hash for display
 	always_ff @(posedge clk) 
@@ -373,7 +369,8 @@ assign speaker_n = !speaker;
 	always_comb 
 		for( int ii = 0; ii < 8; ii++ )
 			hash_word[ii] = hash2[ii];
-	
+			
+	assign hit = ( hash_word[7] == 0 ) ? 1'b1 : 1'b0;
 		
 	///////////////////////////////////////
 	// Stat counter timer and rate counters
@@ -525,7 +522,7 @@ assign speaker_n = !speaker;
 
 
 	// Overlay Text - Dynamic
-	logic [12:0] id_str;
+	logic [14:0] id_str;
 	string_overlay #(.LEN(18)) _id0(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('h48), .y('h09), .out( id_str[0]), .str( "FIPS 180-4 SHA-256" ) );
 	hex_overlay    #(.LEN(12 )) _id1(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('h50),.y('d58), .out( id_str[1]), .in( op_count[47:0] ) );
    //bin_overlay    #(.LEN(1 )) _id2(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.bin_char(bin_char), .x('h46),.y('h09), .out( id_str[2]), .in( disp_id == 32'h0E96_0001 ) );
@@ -536,12 +533,14 @@ assign speaker_n = !speaker;
 
 	// Display two 512 bit message blocks and 256 bit output hash
 	hex_overlay #(.LEN(128)) _id7(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d16), .out( id_str[7]), .in( ibuf[0] ) );
-	hex_overlay #(.LEN(128)) _id8(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d18), .out( id_str[8]), .in( ibuf[1] ) );
+	hex_overlay #(.LEN(128)) _id8(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d18), .out( id_str[8]), .in( ibuf_nonce ) );
 	hex_overlay #(.LEN(64 )) _id9(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d20), .out( id_str[9]), .in( hash    ) );
 	hex_overlay #(.LEN(64 )) _id10(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d22), .out( id_str[10]),.in( hash2    ) );
 	hex_overlay #(.LEN(64 )) _id11(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d24), .out( id_str[11]),.in( hash_word  ) );
 	hex_overlay #(.LEN(64 )) _id12(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d26), .out( id_str[12]),.in( difficulty  ) );
 	
+	hex_overlay #(.LEN( 8 )) _id13(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d68), .y('d20), .out( id_str[13]),.in( nonce_pipe[1]  ) );
+	hex_overlay #(.LEN( 8 )) _id14(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d68), .y('d24), .out( id_str[14]),.in( nonce_pipe[2]  ) );
 	
 
 	assign overlay = ( text_ovl && text_color == 0 ) | // normal text
