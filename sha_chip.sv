@@ -248,22 +248,21 @@ assign speaker_n = !speaker;
 		if( reset ) begin
 			state_count <= 0;
 		end else begin
-			if( hit && continuous ) begin
-				state_count <= 0;
-			end else if( state_count == 0 ) begin
+			if( state_count == 0 ) begin
 				state_count <= ( sha_go ) ? 1 : 0;
 			end else if( state_count == 129 ) begin
-				state_count <= ( sha_go ) ? 66 : 0; // redo
+				state_count <= ( hit | sha_go ) ? 66 : 0; // redo or last pass after hit
 			end else begin
 				state_count <= state_count + 1;
 			end
 		end
 	end
 	
-	assign get_msg = ( state_count == 1 || ( state_count == 129 && sha_go ) ) ? 1'b1 : 1'b0;
+	assign get_msg = ( state_count == 1 || ( state_count == 129 && (sha_go|hit) ) ) ? 1'b1 : 1'b0;
 	assign  ld_msg = ( state_count == 2 || state_count == 66 ) ? 1'b1 : 1'b0;
 	assign msg_idx = ( state_count == 66 ) ? 1'b1 : 1'b0;
 	assign mode    = ( state_count == 2 ) ? MODE_INIT : MODE_REDO;
+	assign ld_hit  = ( state_count == 129 && hit ) ? 1'b1 : 1'b0;
 	
 	
 	// Padded Input Message (2 blocks)
@@ -281,16 +280,6 @@ assign speaker_n = !speaker;
 	logic [255:0] difficulty;
 	assign difficulty = bc_msg[1][9:11]<<((bc_msg[1][8]-3)<<3);
 	
-	// Load input buffer message
-	always_ff @(posedge clk) begin
-		if( reset ) begin
-			ibuf <= 0;
-		end else if( get_msg ) begin
-			ibuf[0] <= in_msg[0];
-			ibuf[1] <= in_msg[1];						
-		end
-	end
-	
 	// Nonce handling
 	logic [31:0] nonce;
 	logic [0:4][31:0] nonce_pipe;
@@ -300,9 +289,9 @@ assign speaker_n = !speaker;
 			nonce_pipe <= 0;
 		end else begin	
 			// Nonce creations
-			if( hit && continuous ) begin
+			if( ld_hit ) begin
 				nonce <= nonce_pipe[2];
-			end else if( ld_msg & msg_idx ) begin
+			end else if( get_msg ) begin
 				nonce[31:4] <= nonce[31:4];
 				nonce[3:0] <= nonce[3:0] + 1;
 			end else begin
@@ -310,11 +299,25 @@ assign speaker_n = !speaker;
 			end
 								
 			// Pipeline of Nonces
-			nonce_pipe[0] <= ( ld_msg ) ? nonce : nonce_pipe[0];	// Sha1
-			nonce_pipe[1] <= ( ovalid ) ? nonce_pipe[0] : nonce_pipe[1]; // Sha2
-			nonce_pipe[2] <= ( ovalid ) ? nonce_pipe[1] : nonce_pipe[2]; // delayed
+			nonce_pipe[0] <= ( ld_msg ) ? nonce : nonce_pipe[0];	// Sha1 input
+			nonce_pipe[1] <= ( ovalid ) ? nonce_pipe[0] : nonce_pipe[1]; // Sha2 input
+			nonce_pipe[2] <= ( ovalid ) ? nonce_pipe[1] : nonce_pipe[2]; // Sha2 output 
 			nonce_pipe[3] <= ( ovalid ) ? nonce_pipe[2] : nonce_pipe[3]; // delayed
 			nonce_pipe[4] <= ( ovalid ) ? nonce_pipe[3] : nonce_pipe[4]; // delayed
+		end
+	end
+
+	// Load input buffer message
+	always_ff @(posedge clk) begin
+		if( reset ) begin
+			ibuf <= 0;
+		end else if( get_msg ) begin
+			ibuf[0] <= in_msg[0];
+			ibuf[1] <= { 
+					in_msg[1][0:2], 
+					nonce[7:0], nonce[15:8], nonce[23:16], nonce[31:24], 
+					in_msg[1][4:15] 
+					};
 		end
 	end
 
@@ -334,7 +337,7 @@ assign speaker_n = !speaker;
 		// Input strobe and message
 		.in_valid( ld_msg ),
 		.mode( mode ),
-		.message( (msg_idx) ? ibuf_nonce : ibuf[0] ),
+		.message( (msg_idx) ? ibuf[1] : ibuf[0] ),
 		// Output 
 		.out_valid( ovalid ),
 		.hash( sha_out )
@@ -533,7 +536,7 @@ assign speaker_n = !speaker;
 
 	// Display two 512 bit message blocks and 256 bit output hash
 	hex_overlay #(.LEN(128)) _id7(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d16), .out( id_str[7]), .in( ibuf[0] ) );
-	hex_overlay #(.LEN(128)) _id8(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d18), .out( id_str[8]), .in( ibuf_nonce ) );
+	hex_overlay #(.LEN(128)) _id8(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d18), .out( id_str[8]), .in( ibuf[1] ) );
 	hex_overlay #(.LEN(64 )) _id9(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d20), .out( id_str[9]), .in( hash    ) );
 	hex_overlay #(.LEN(64 )) _id10(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d22), .out( id_str[10]),.in( hash2    ) );
 	hex_overlay #(.LEN(64 )) _id11(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d24), .out( id_str[11]),.in( hash_word  ) );
