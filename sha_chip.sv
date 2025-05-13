@@ -285,25 +285,25 @@ assign speaker_n = !speaker;
 	logic [0:4][31:0] nonce_pipe;
 	always_ff @(posedge clk) begin
 		if( reset ) begin
-			nonce <= 32'h7a33330e; // orig endian
+			nonce <= 32'h7a33330e; // orig endian hit
 			nonce_pipe <= 0;
 		end else begin	
 			// Nonce creations
 			if( ld_hit ) begin
-				nonce <= nonce_pipe[2];
+				nonce <= nonce_pipe[3];
 			end else if( get_msg ) begin
-				nonce[31:4] <= nonce[31:4];
+				nonce[31:4] <= nonce[31:4]; 
 				nonce[3:0] <= nonce[3:0] + 1;
 			end else begin
 				nonce <= nonce;
 			end
 								
 			// Pipeline of Nonces
-			nonce_pipe[0] <= ( ld_msg ) ? nonce : nonce_pipe[0];	// Sha1 input
-			nonce_pipe[1] <= ( ovalid ) ? nonce_pipe[0] : nonce_pipe[1]; // Sha2 input
-			nonce_pipe[2] <= ( ovalid ) ? nonce_pipe[1] : nonce_pipe[2]; // Sha2 output 
-			nonce_pipe[3] <= ( ovalid ) ? nonce_pipe[2] : nonce_pipe[3]; // delayed
-			nonce_pipe[4] <= ( ovalid ) ? nonce_pipe[3] : nonce_pipe[4]; // delayed
+			nonce_pipe[0] <= ( get_msg || ld_hit ) ? nonce : nonce_pipe[0];	// nonce input
+			nonce_pipe[1] <= ( ld_msg  ) ? nonce_pipe[0] : nonce_pipe[1]; // Sha1 input
+			nonce_pipe[2] <= ( ovalid  ) ? nonce_pipe[1] : nonce_pipe[2]; // Sha1 output and sha2 input 
+			nonce_pipe[3] <= ( ovalid2 ) ? nonce_pipe[2] : nonce_pipe[3]; // sha2 output
+			nonce_pipe[4] <= ( ovalid2 ) ? nonce_pipe[3] : nonce_pipe[4]; // delayed, if needed?
 		end
 	end
 
@@ -321,13 +321,6 @@ assign speaker_n = !speaker;
 		end
 	end
 
-	// Insert nonce into  MSG, swaping ending
-	logic [0:15][31:0] ibuf_nonce;
-	assign ibuf_nonce = { 	
-			ibuf[1][0:2], 
-			nonce[7:0], nonce[15:8], nonce[23:16], nonce[31:24], 
-			ibuf[1][4:15] 
-			};
 	
 	logic ovalid;
 	logic [255:0] sha_out;	
@@ -346,7 +339,10 @@ assign speaker_n = !speaker;
 
 	// Latch output hash for display
 	always_ff @(posedge clk) 
-		hash <= ( ovalid ) ? sha_out : hash;
+		if( reset ) 
+			hash <= ~0; // not a hit
+		else
+			hash <= ( ovalid ) ? sha_out : hash;
 
 	logic ovalid2;
 	logic [255:0] sha_out2;
@@ -365,15 +361,18 @@ assign speaker_n = !speaker;
 	// Latch output hash for display
 	logic [0:7][31:0] hash2;
 	always_ff @(posedge clk) 
-		hash2 <= ( ovalid2 ) ? sha_out2 : hash2;
+		if( reset ) 
+			hash2 <= ~0; // not a hit
+		else	
+			hash2 <= ( ovalid2 ) ? sha_out2 : hash2;
 		
 	logic [7:0][31:0] hash_word;
 	
 	always_comb 
 		for( int ii = 0; ii < 8; ii++ )
-			hash_word[ii] = hash2[ii];
+			hash_word[ii] = hash2[ii];  // swaps word order to create the protocol number [255:0] word
 			
-	assign hit = ( hash_word[7] == 0 ) ? 1'b1 : 1'b0;
+	assign hit = ( hash_word[7] == 0 ) ? 1'b1 : 1'b0; // This set to diff1 for now need nBits threshold tool
 		
 	///////////////////////////////////////
 	// Stat counter timer and rate counters
@@ -525,7 +524,7 @@ assign speaker_n = !speaker;
 
 
 	// Overlay Text - Dynamic
-	logic [14:0] id_str;
+	logic [31:0] id_str;
 	string_overlay #(.LEN(18)) _id0(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('h48), .y('h09), .out( id_str[0]), .str( "FIPS 180-4 SHA-256" ) );
 	hex_overlay    #(.LEN(12 )) _id1(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('h50),.y('d58), .out( id_str[1]), .in( op_count[47:0] ) );
    //bin_overlay    #(.LEN(1 )) _id2(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.bin_char(bin_char), .x('h46),.y('h09), .out( id_str[2]), .in( disp_id == 32'h0E96_0001 ) );
@@ -544,6 +543,7 @@ assign speaker_n = !speaker;
 	
 	hex_overlay #(.LEN( 8 )) _id13(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d68), .y('d20), .out( id_str[13]),.in( nonce_pipe[1]  ) );
 	hex_overlay #(.LEN( 8 )) _id14(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d68), .y('d24), .out( id_str[14]),.in( nonce_pipe[2]  ) );
+	bin_overlay #(.LEN( 1 )) _id15(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.bin_char(bin_char), .x('d78), .y('d24), .out( id_str[15]),.in( hit  ) );
 	
 
 	assign overlay = ( text_ovl && text_color == 0 ) | // normal text
