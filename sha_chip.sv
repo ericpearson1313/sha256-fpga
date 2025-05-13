@@ -182,6 +182,15 @@ logic [15:0] tone_cnt;
 logic cont_tone;
 logic spk_toggle;
 
+logic beep;
+logic [19:0] beep_cnt; // 1/50th-ish sec
+always @(posedge clk)
+	if( beep_cnt == 0 ) 
+		beep_cnt <= ( beep ) ? 1 : 0;
+	else
+		beep_cnt <= beep_cnt + 1;
+
+
 always @(posedge clk) begin
 	if( tone_cnt == 0 ) begin
 		spk_toggle <= !spk_toggle;
@@ -191,7 +200,7 @@ always @(posedge clk) begin
 								   //( key == 5'h14 ) ? { 16'h218E } /* F5 */ :
 								   //( key == 5'h15 ) ? { 16'h1DE5 } /* G5 */ :
 								   //( key == 5'h16 ) ? { 16'h1AA2 } /* A5 */ :
-								   //( key == 5'h17 ) ? { 16'h17BA } /* B5 */ :
+								   ( beep_cnt != 0 ) ? { 16'h17BA } /* B5 */ :
 								   //( key == 5'h18 ) ? { 16'h1665 } /* C6 */ : 
 														                0; // mute
 	end else begin
@@ -235,12 +244,16 @@ assign speaker_n = !speaker;
 	// Press and hold (long push) turns on continuous mode and the button can be released.
 	// Press button again to stop
 	logic continuous;
-	always_ff @(posedge clk) 
+	logic long_fire_del1;
+	always_ff @(posedge clk) begin
+		long_fire_del1 <= long_fire;
 		continuous <=  ( reset ) ? 1'b0 : 
-							( long_fire ) ? 1'b1 : 
+							( long_fire && !long_fire_del1 ) ? 1'b1 : // rising edge of longfire starts continuous
 							( short_fire ) ? 1'b0 : 
 							          !hit & continuous;
+	end
 
+	assign beep = hit & continuous;										
 	assign sha_go = short_fire || continuous;
 	
 	logic [7:0] state_count;
@@ -258,7 +271,7 @@ assign speaker_n = !speaker;
 		end
 	end
 	
-	assign get_msg = ( state_count == 1 || ( state_count == 129 && (sha_go|hit) ) ) ? 1'b1 : 1'b0;
+	assign get_msg = ( state_count == 1 || ( state_count == 129 && sha_go ) ) ? 1'b1 : 1'b0;
 	assign  ld_msg = ( state_count == 2 || state_count == 66 ) ? 1'b1 : 1'b0;
 	assign msg_idx = ( state_count == 66 ) ? 1'b1 : 1'b0;
 	assign mode    = ( state_count == 2 ) ? MODE_INIT : MODE_REDO;
@@ -290,10 +303,10 @@ assign speaker_n = !speaker;
 		end else begin	
 			// Nonce creations
 			if( ld_hit ) begin
-				nonce <= nonce_pipe[3];
+				nonce <= nonce_pipe[4];
 			end else if( get_msg ) begin
-				nonce[31:4] <= nonce[31:4]; 
-				nonce[3:0] <= nonce[3:0] + 1;
+				nonce[31:20] <= nonce[31:20]; 
+				nonce[19:0] <= nonce[19:0] + 1;
 			end else begin
 				nonce <= nonce;
 			end
@@ -303,7 +316,7 @@ assign speaker_n = !speaker;
 			nonce_pipe[1] <= ( ld_msg  ) ? nonce_pipe[0] : nonce_pipe[1]; // Sha1 input
 			nonce_pipe[2] <= ( ovalid  ) ? nonce_pipe[1] : nonce_pipe[2]; // Sha1 output and sha2 input 
 			nonce_pipe[3] <= ( ovalid2 ) ? nonce_pipe[2] : nonce_pipe[3]; // sha2 output
-			nonce_pipe[4] <= ( ovalid2 ) ? nonce_pipe[3] : nonce_pipe[4]; // delayed, if needed?
+			nonce_pipe[4] <= ( hit & continuous ) ? nonce_pipe[3] : nonce_pipe[4]; // snapshot of hit case
 		end
 	end
 
@@ -541,9 +554,12 @@ assign speaker_n = !speaker;
 	hex_overlay #(.LEN(64 )) _id11(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d24), .out( id_str[11]),.in( hash_word  ) );
 	hex_overlay #(.LEN(64 )) _id12(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d26), .out( id_str[12]),.in( difficulty  ) );
 	
-	hex_overlay #(.LEN( 8 )) _id13(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d68), .y('d20), .out( id_str[13]),.in( nonce_pipe[1]  ) );
+	//hex_overlay #(.LEN( 8 )) _id13(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d68), .y('d20), .out( id_str[13]),.in( nonce_pipe[1]  ) );
 	hex_overlay #(.LEN( 8 )) _id14(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d68), .y('d24), .out( id_str[14]),.in( nonce_pipe[2]  ) );
 	bin_overlay #(.LEN( 1 )) _id15(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.bin_char(bin_char), .x('d78), .y('d24), .out( id_str[15]),.in( hit  ) );
+
+	string_overlay #(.LEN(7)) _id16(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('d68), .y('d20), .out( id_str[16]), .str( "1st SHA" ) );
+	string_overlay #(.LEN(7)) _id17(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('d68), .y('d22), .out( id_str[17]), .str( "2nd SHA" ) );
 	
 
 	assign overlay = ( text_ovl && text_color == 0 ) | // normal text
