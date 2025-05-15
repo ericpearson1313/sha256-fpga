@@ -80,7 +80,7 @@ module sha_11_6_core (
 				kt_reg[cc][3] <= kt_std[cc+22];
 				kt_reg[cc][2] <= kt_std[cc+11]; 
 				kt_reg[cc][1] <= kt_std[cc+ 0]; // Offset so first shift we start again
-				kt_reg[cc][0] <= kt_std[cc+55];
+				kt_reg[cc][0] <= ( cc < 9 ) ? kt_std[cc+55] : 0;
 			end
 		end else begin
 			kt_reg[0] <= ( kt_shift[0] ) ? { kt_reg[0][1:5], kt_reg[0][0] } : kt_reg[0] ;
@@ -134,12 +134,12 @@ module sha_11_6_core (
 	end //always
 
 	always_ff @(posedge clk) begin
-		wt_reg[0] = ( wt_load ) ? i_data : wt_reg[5][2:17]; // shift last by 2 or new input
-		wt_reg[1] = wt_reg[0][1:16]; // first stage has only 1 round
-		wt_reg[2] = wt_reg[1][2:17]; // stage has 2 rounds
-		wt_reg[3] = wt_reg[2][2:17]; // stage has 2 rounds
-		wt_reg[4] = wt_reg[3][2:17]; // stage has 2 rounds
-		wt_reg[5] = wt_reg[4][2:17]; // stage has 2 rounds
+		wt_reg[0] = ( wt_load ) ? i_data : wt[5][2:17]; // shift last by 2 or new input
+		wt_reg[1] = wt[0][1:16]; // first stage has only 1 round
+		wt_reg[2] = wt[1][2:17]; // stage has 2 rounds
+		wt_reg[3] = wt[2][2:17]; // stage has 2 rounds
+		wt_reg[4] = wt[3][2:17]; // stage has 2 rounds
+		wt_reg[5] = wt[4][2:17]; // stage has 2 rounds
 	end	
 
 	// get wt wires for the 11 stages
@@ -224,7 +224,7 @@ module sha_11_6_core (
 
 		// Sum reg aligns with hashreg 5
 		for( int ii = 0; ii < 8; ii++ )
-			sum_reg[ii] = hash_reg[4][ii] + acc_reg[4][11];
+			sum_reg[ii] = hash_reg[4][ii] + acc_reg[4][ii];
 
 		// Input to hash reg pipe 
 		if( init_hash && mode_start == MODE_INIT ) begin // load H* if first sha round

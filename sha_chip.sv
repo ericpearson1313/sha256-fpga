@@ -337,16 +337,28 @@ assign speaker_n = !speaker;
 	
 	logic ovalid;
 	logic [255:0] sha_out;	
-	sha_core _sha_core (
+	//sha_core _sha_core (
+	//	.clk ( clk ),
+	//	.reset( reset ),
+	//	// Input strobe and message
+	//	.in_valid( ld_msg ),
+	//	.mode( mode ),
+	//	.message( (msg_idx) ? ibuf[1] : ibuf[0] ),
+	//	// Output 
+	//	.out_valid( ovalid ),
+	//	.hash( sha_out )
+	//);
+
+	sha_11_6_core _sha_core (
 		.clk ( clk ),
 		.reset( reset ),
 		// Input strobe and message
-		.in_valid( ld_msg ),
-		.mode( mode ),
-		.message( (msg_idx) ? ibuf[1] : ibuf[0] ),
+		.i_valid( ld_msg ),
+		.i_mode( mode ),
+		.i_data( (msg_idx) ? ibuf[1] : ibuf[0] ),
 		// Output 
-		.out_valid( ovalid ),
-		.hash( sha_out )
+		.o_valid( ovalid ),
+		.o_data( sha_out )
 	);
 	
 
@@ -359,18 +371,30 @@ assign speaker_n = !speaker;
 
 	logic ovalid2;
 	logic [255:0] sha_out2;
-	sha_core _sha_core2 (
+	//sha_core _sha_core2 (
+	//	.clk ( clk ),
+	//	.reset( reset ),
+	//	// Input strobe and message
+	//	.in_valid( ovalid ),
+	//	.mode ( MODE_INIT ),
+	//	.message( { sha_out, 256'h80000000_00000000_00000000_00000000_00000000_00000000_00000000_00000100 } ),
+	//	// Output 
+	//	.out_valid( ovalid2 ),
+	//	.hash( sha_out2 )
+	//);	
+
+	sha_11_6_core _sha_core2 (
 		.clk ( clk ),
 		.reset( reset ),
 		// Input strobe and message
-		.in_valid( ovalid ),
-		.mode ( MODE_INIT ),
-		.message( { sha_out, 256'h80000000_00000000_00000000_00000000_00000000_00000000_00000000_00000100 } ),
+		.i_valid( ovalid ),
+		.i_mode( MODE_INIT ),
+		.i_data( { sha_out, 256'h80000000_00000000_00000000_00000000_00000000_00000000_00000000_00000100 } ),
 		// Output 
-		.out_valid( ovalid2 ),
-		.hash( sha_out2 )
+		.o_valid( ovalid2 ),
+		.o_data( sha_out2 )
 	);	
-
+	
 	// Latch output hash for display
 	logic [0:7][31:0] hash2;
 	always_ff @(posedge clk) 
