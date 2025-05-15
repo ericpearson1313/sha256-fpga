@@ -410,7 +410,7 @@ assign speaker_n = !speaker;
 			hash_word[ii] = hash2[ii];  // swaps word order to create the protocol number [255:0] word
 			
 	assign hit = ( hash_word[7] == 0 ) ? 1'b1 : 1'b0; // This set to diff1 for now need nBits threshold tool
-		
+
 	///////////////////////////////////////
 	// Stat counter timer and rate counters
 	///////////////////////////////////////
@@ -448,7 +448,8 @@ assign speaker_n = !speaker;
 	////       VIDEO
 	////
 	//////////////////////////////////
-	
+
+`ifdef WVGA
 	// HDMI reset
 	logic [3:0] hdmi_reg;
 	always @(posedge hdmi_clk) begin
@@ -653,6 +654,7 @@ assign speaker_n = !speaker;
 		.pad_out( {hdmi_d2, hdmi_d1, hdmi_d0, hdmi_ck} ), 
 		.pad_out_b( )  // true differential, _b not req
 	);
+`endif
 endmodule
 
 
