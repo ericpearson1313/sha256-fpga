@@ -270,10 +270,10 @@ module sha_11_6_core (
 					hash_reg[0][5] <= 32'h9b05688c;
 					hash_reg[0][6] <= 32'h1f83d9ab;
 					hash_reg[0][7] <= 32'h5be0cd19;	
-				end else if( init_hash && mode_start == !MODE_REDO ) begin // Load old
+				end else if( init_hash && mode_start == MODE_HASH ) begin // Load new
 					hash_reg[0] <= sum_reg;
-				end else begin
-					hash_reg[0] <= hash_reg[0];
+				end else begin  // redo or mid wrap                       
+					hash_reg[0] <= hash_reg[5];
 				end	
 			end // hshift
 		end // !reset
@@ -282,25 +282,22 @@ module sha_11_6_core (
 	// First input round
 		// starting hash
 	always_comb begin
-		if( init_hash ) begin
-			if( mode_start == MODE_INIT ) begin // load standard start value
-				da[0] = 32'h6a09e667;
-				db[0] = 32'hbb67ae85;
-				dc[0] = 32'h3c6ef372;
-				dd[0] = 32'ha54ff53a;
-				de[0] = 32'h510e527f;
-				df[0] = 32'h9b05688c;
-				dg[0] = 32'h1f83d9ab;
-				dh[0] = 32'h5be0cd19;   // Step 2 for 6.1.2 and 6.2.2
-			end else if ( mode_start == MODE_HASH ) begin // begin with sum hash
-				{ da[0] , db[0] , dc[0] , dd[0] , de[0] , df[0] , dg[0] , dh[0] } = sum_reg;
-			end else if( init_hash && mode_start == MODE_REDO) begin // reload old hash
-				{ da[0] , db[0] , dc[0] , dd[0] , de[0] , df[0] , dg[0] , dh[0] } = hash_reg[5];
-			end
+		if( init_hash && mode_start == MODE_INIT ) begin // load standard start value
+			da[0] = 32'h6a09e667;
+			db[0] = 32'hbb67ae85;
+			dc[0] = 32'h3c6ef372;
+			dd[0] = 32'ha54ff53a;
+			de[0] = 32'h510e527f;
+			df[0] = 32'h9b05688c;
+			dg[0] = 32'h1f83d9ab;
+			dh[0] = 32'h5be0cd19;   // Step 2 for 6.1.2 and 6.2.2
+		end else if( init_hash && mode_start == MODE_HASH ) begin // begin with sum hash
+			{ da[0] , db[0] , dc[0] , dd[0] , de[0] , df[0] , dg[0] , dh[0] } = sum_reg;
+		end else if( init_hash && mode_start == MODE_REDO) begin // reload old hash
+			{ da[0] , db[0] , dc[0] , dd[0] , de[0] , df[0] , dg[0] , dh[0] } = hash_reg[5];
 		end else begin // else normal case feed from acc reg
-				{ da[0] , db[0] , dc[0] , dd[0] , de[0] , df[0] , dg[0] , dh[0] } = acc_reg[5];
+			{ da[0] , db[0] , dc[0] , dd[0] , de[0] , df[0] , dg[0] , dh[0] } = acc_reg[5];
 		end	
-
 	end
 	
 	// Output is always the sum
