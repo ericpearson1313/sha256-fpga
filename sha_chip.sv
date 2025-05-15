@@ -560,6 +560,7 @@ assign speaker_n = !speaker;
 
 	string_overlay #(.LEN(7)) _id16(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('d68), .y('d20), .out( id_str[16]), .str( "1st SHA" ) );
 	string_overlay #(.LEN(7)) _id17(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('d68), .y('d22), .out( id_str[17]), .str( "2nd SHA" ) );
+	string_overlay #(.LEN(10)) _id18(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('d68), .y('d26), .out( id_str[18]), .str( "difficulty" ) );
 	
 
 	assign overlay = ( text_ovl && text_color == 0 ) | // normal text
