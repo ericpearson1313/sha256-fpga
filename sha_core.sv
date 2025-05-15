@@ -5,7 +5,7 @@
 // Changed input to more axi-like, assumes 1 to 6 cycle burst input
 module sha_11_6_core (
 	input logic clk,
-	input logic reset,
+	input logic reset, // sim only, fpga leave tied to 1'b0
 	// Input strobe and message
 	input logic 		  i_valid,
 	output logic 		  i_ready, 
@@ -31,9 +31,9 @@ module sha_11_6_core (
 	logic [1:0] mode_done;
 
 	// [col][row]
-	logic [0:5][0:5] tmat; // t matrix
-	logic [37:0] t;
-	logic [37:0][1:0] md;
+	reg [0:5][0:5] tmat = 0; // t matrix
+	reg [37:0] t = 0;
+	reg [37:0][1:0] md = 0;
 	
 	always_ff @(posedge clk) begin
 		if( reset ) begin
@@ -94,17 +94,33 @@ module sha_11_6_core (
 							 32'h748f82ee, 32'h78a5636f, 32'h84c87814, 32'h8cc70208,   
 							 32'h90befffa, 32'ha4506ceb, 32'hbef9a3f7, 32'hc67178f2 };	
 
-	logic [0:10][0:5][31:0] kt_reg;
+	reg [0:10][0:5][31:0] kt_reg = { // manually re-ordered, only const for POR defaults
+				32'h682e6ff3,32'h428a2f98,32'h550c7dc3,32'h5cb0a9dc,32'h2e1b2138,32'hd192e819,
+				32'h748f82ee,32'h71374491,32'h72be5d74,32'h76f988da,32'h4d2c6dfc,32'hd6990624,
+				32'h78a5636f,32'hb5c0fbcf,32'h80deb1fe,32'h983e5152,32'h53380d13,32'hf40e3585,
+				32'h84c87814,32'he9b5dba5,32'h9bdc06a7,32'ha831c66d,32'h650a7354,32'h106aa070,
+				32'h8cc70208,32'h3956c25b,32'hc19bf174,32'hb00327c8,32'h766a0abb,32'h19a4c116,
+				32'h90befffa,32'h59f111f1,32'he49b69c1,32'hbf597fc7,32'h81c2c92e,32'h1e376c08,
+				32'ha4506ceb,32'h923f82a4,32'hefbe4786,32'hc6e00bf3,32'h92722c85,32'h2748774c,
+				32'hbef9a3f7,32'hab1c5ed5,32'h0fc19dc6,32'hd5a79147,32'ha2bfe8a1,32'h34b0bcb5,
+				32'hc67178f2,32'hd807aa98,32'h240ca1cc,32'h06ca6351,32'ha81a664b,32'h391c0cb3,
+				32'h00000000,32'h12835b01,32'h2de92c6f,32'h14292967,32'hc24b8b70,32'h4ed8aa4a,
+				32'h00000000,32'h243185be,32'h4a7484aa,32'h27b70a85,32'hc76c51a3,32'h5b9cca4f };
+				
 	always_ff @(posedge clk) begin : _kt_reg_array
 		if( reset ) begin
-			for( int cc = 0; cc < 11; cc++ ) begin
-				kt_reg[cc][5] <= kt_std[cc+44]; 
-				kt_reg[cc][4] <= kt_std[cc+33]; 
-				kt_reg[cc][3] <= kt_std[cc+22];
-				kt_reg[cc][2] <= kt_std[cc+11]; 
-				kt_reg[cc][1] <= kt_std[cc+ 0]; // Offset so first shift we start again
-				kt_reg[cc][0] <= ( cc < 9 ) ? kt_std[cc+55] : 0;
-			end
+			kt_reg <= { // manually re-ordered, only const for POR defaults
+				32'h682e6ff3,32'h428a2f98,32'h550c7dc3,32'h5cb0a9dc,32'h2e1b2138,32'hd192e819,
+				32'h748f82ee,32'h71374491,32'h72be5d74,32'h76f988da,32'h4d2c6dfc,32'hd6990624,
+				32'h78a5636f,32'hb5c0fbcf,32'h80deb1fe,32'h983e5152,32'h53380d13,32'hf40e3585,
+				32'h84c87814,32'he9b5dba5,32'h9bdc06a7,32'ha831c66d,32'h650a7354,32'h106aa070,
+				32'h8cc70208,32'h3956c25b,32'hc19bf174,32'hb00327c8,32'h766a0abb,32'h19a4c116,
+				32'h90befffa,32'h59f111f1,32'he49b69c1,32'hbf597fc7,32'h81c2c92e,32'h1e376c08,
+				32'ha4506ceb,32'h923f82a4,32'hefbe4786,32'hc6e00bf3,32'h92722c85,32'h2748774c,
+				32'hbef9a3f7,32'hab1c5ed5,32'h0fc19dc6,32'hd5a79147,32'ha2bfe8a1,32'h34b0bcb5,
+				32'hc67178f2,32'hd807aa98,32'h240ca1cc,32'h06ca6351,32'ha81a664b,32'h391c0cb3,
+				32'h00000000,32'h12835b01,32'h2de92c6f,32'h14292967,32'hc24b8b70,32'h4ed8aa4a,
+				32'h00000000,32'h243185be,32'h4a7484aa,32'h27b70a85,32'hc76c51a3,32'h5b9cca4f };		
 		end else begin
 			kt_reg[0] <= ( kt_shift[0] ) ? { kt_reg[0][1:5], kt_reg[0][0] } : kt_reg[0] ;
 			kt_reg[1] <= ( kt_shift[1] ) ? { kt_reg[1][1:5], kt_reg[1][0] } : kt_reg[1] ;
@@ -131,7 +147,7 @@ module sha_11_6_core (
 	// Wt
 	///////
 	
-	logic [0:5][0:15][31:0] wt_reg;
+	reg   [0:5][0:15][31:0] wt_reg = 0;
 	logic	[0:5][0:17][31:0] wt;
 	logic [0:5][16:17][31:0] s0, s1;
 	logic [0:5][16:17][31:0] w2, w15, w7, w16;
@@ -211,7 +227,7 @@ module sha_11_6_core (
 	end
 
 	// Wire up stages and stage registers
-	reg [0:6][0:7][31:0] acc_reg;
+	reg [0:6][0:7][31:0] acc_reg = 0;
 	always_ff @(posedge clk) begin // Stage Registers
 		if( reset ) begin
 			acc_reg <= 0;
@@ -222,7 +238,7 @@ module sha_11_6_core (
 			acc_reg[3] <= { qa[6], qb[6], qc[6], qd[6], qe[6], qf[6], qg[6], qh[6] };
 			acc_reg[4] <= { qa[8], qb[8], qc[8], qd[8], qe[8], qf[8], qg[8], qh[8] };
 			acc_reg[5] <= { qa[10],qb[10],qc[10],qd[10],qe[10],qf[10],qg[10],qh[10]};
-		end
+	  	end
 	end
 	always_comb begin // stage inputs (except stage 0)
 		//{ da[0] , db[0] , dc[0] , dd[0] , de[0] , df[0] , dg[0] , dh[0] } = acc_reg[0];
@@ -242,11 +258,12 @@ module sha_11_6_core (
 	// HASH 
 	///////
 	
-	logic [0:5][0:7][31:0] hash_reg;
-	logic [0:7][31:0] sum_reg;
+	reg [0:5][0:7][31:0] hash_reg = 0;
+	reg [0:7][31:0] sum_reg = 0;
 	always_ff @(posedge clk) begin
 		if( reset ) begin
 			hash_reg <= 0;
+			sum_reg <= 0;
 		end else begin
 			// Pipeline of hash regs
 			if( hshift ) begin
@@ -261,18 +278,16 @@ module sha_11_6_core (
 					sum_reg[ii] <= hash_reg[4][ii] + acc_reg[4][ii];
 
 				// Input to hash reg pipe 
-				if( init_hash && mode_start == MODE_INIT ) begin // load H* if first sha round
-					hash_reg[0][0] <= 32'h6a09e667;
-					hash_reg[0][1] <= 32'hbb67ae85;
-					hash_reg[0][2] <= 32'h3c6ef372;
-					hash_reg[0][3] <= 32'ha54ff53a;
-					hash_reg[0][4] <= 32'h510e527f;
-					hash_reg[0][5] <= 32'h9b05688c;
-					hash_reg[0][6] <= 32'h1f83d9ab;
-					hash_reg[0][7] <= 32'h5be0cd19;	
-				end else if( init_hash && mode_start == MODE_HASH ) begin // Load new
-					hash_reg[0] <= sum_reg;
-				end else begin  // redo or mid wrap                       
+				if( init_hash ) begin // load input to first round always
+					hash_reg[0][0] <= da[0];
+					hash_reg[0][1] <= db[0];
+					hash_reg[0][2] <= dc[0];
+					hash_reg[0][3] <= dd[0];
+					hash_reg[0][4] <= de[0];
+					hash_reg[0][5] <= df[0];
+					hash_reg[0][6] <= dg[0];
+					hash_reg[0][7] <= dh[0];	
+				end else begin  // mid wrap                       
 					hash_reg[0] <= hash_reg[5];
 				end	
 			end // hshift
@@ -293,7 +308,7 @@ module sha_11_6_core (
 			dh[0] = 32'h5be0cd19;   // Step 2 for 6.1.2 and 6.2.2
 		end else if( init_hash && mode_start == MODE_HASH ) begin // begin with sum hash
 			{ da[0] , db[0] , dc[0] , dd[0] , de[0] , df[0] , dg[0] , dh[0] } = sum_reg;
-		end else if( init_hash && mode_start == MODE_REDO) begin // reload old hash
+		end else if( init_hash ) begin // else reload old hash
 			{ da[0] , db[0] , dc[0] , dd[0] , de[0] , df[0] , dg[0] , dh[0] } = hash_reg[5];
 		end else begin // else normal case feed from acc reg
 			{ da[0] , db[0] , dc[0] , dd[0] , de[0] , df[0] , dg[0] , dh[0] } = acc_reg[5];

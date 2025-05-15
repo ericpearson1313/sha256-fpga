@@ -351,7 +351,7 @@ assign speaker_n = !speaker;
 
 	sha_11_6_core _sha_core (
 		.clk ( clk ),
-		.reset( reset ),
+		.reset( 1'b0 ), // use por defaults
 		// Input strobe and message
 		.i_valid( ld_msg ),
 		.i_mode( mode ),
@@ -385,7 +385,7 @@ assign speaker_n = !speaker;
 
 	sha_11_6_core _sha_core2 (
 		.clk ( clk ),
-		.reset( reset ),
+		.reset( 1'b0 ), // use por defaults
 		// Input strobe and message
 		.i_valid( ovalid ),
 		.i_mode( MODE_INIT ),
