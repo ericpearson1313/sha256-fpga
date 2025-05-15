@@ -25,25 +25,48 @@ module sha_11_6_core (
 	logic [0:5] kt_shift;	
 	logic wt_shift;
 	logic wt_load;	
+	logic hshift; // to keep in phase
 	logic init_hash;	
 	logic [1:0] mode_start;
 	logic [1:0] mode_done;
 
-	
+	// [col][row]
+	logic [0:5][0:5] tmat; // t matrix
 	logic [37:0] t;
 	logic [37:0][1:0] md;
 	
 	always_ff @(posedge clk) begin
-		t <=  {  t[37:0], i_valid    };
-		md <= { md[37:0], i_mode     };
+		if( reset ) begin
+			t <= 0;
+			md <= 0;
+		end else begin
+			t <=  {  t[36:0], i_valid };
+			md <= { md[36:0], i_mode     };
+		end
+	end
+	
+	always_ff @(posedge clk) begin
+		if( reset ) begin
+			tmat <= 0;
+		end else begin
+			tmat <= { i_valid, tmat[5][0:4], tmat[0:4] };
+		end
 	end
 	
 	assign o_valid = t[36];
 	assign wt_load = i_valid;
 	
+	always_comb begin // using coloumn or'ed leading edge t(matrix) to shift kt
+		for( int ii = 0; ii < 6; ii++ ) begin
+			if( ii == 0 ) 
+				kt_shift[0] = |{{ i_valid, tmat[5][0:4] } & ~tmat[0] };
+			else 
+				kt_shift[ii] = |{ tmat[ii-1] & ~tmat[ii] };
+		end
+	end
 
-	assign kt_shift = t[5:0];
-	assign wt_shift = |t[34:0];
+	assign hshift = |t[35:0]; // shift H back to x6 start but need to shift out last hashes
+	
 	assign init_hash = t[0];
 	assign mode_start = md[0];
 	assign done = t[36];
@@ -110,9 +133,8 @@ module sha_11_6_core (
 	
 	logic [0:5][0:15][31:0] wt_reg;
 	logic	[0:5][0:17][31:0] wt;
-	logic [0:5][0:17][31:0] s0, s1;
-	logic [0:5][0:17][31:0] w2, w15, w7, w16;
-	logic [0:5][0:17][31:0] wt_next;
+	logic [0:5][16:17][31:0] s0, s1;
+	logic [0:5][16:17][31:0] w2, w15, w7, w16;
 	
 	// build wt[64] array function array (with up to 2 extra bits
 	always_comb begin
@@ -134,12 +156,16 @@ module sha_11_6_core (
 	end //always
 
 	always_ff @(posedge clk) begin
-		wt_reg[0] = ( wt_load ) ? i_data : wt[5][2:17]; // shift last by 2 or new input
-		wt_reg[1] = wt[0][1:16]; // first stage has only 1 round
-		wt_reg[2] = wt[1][2:17]; // stage has 2 rounds
-		wt_reg[3] = wt[2][2:17]; // stage has 2 rounds
-		wt_reg[4] = wt[3][2:17]; // stage has 2 rounds
-		wt_reg[5] = wt[4][2:17]; // stage has 2 rounds
+		if( reset ) begin
+			wt_reg <= 0;
+		end else begin
+			wt_reg[0] <= ( wt_load ) ? i_data : wt[5][2:17]; // shift last by 2 or new input
+			wt_reg[1] <= wt[0][1:16]; // first stage has only 1 round
+			wt_reg[2] <= wt[1][2:17]; // stage has 2 rounds
+			wt_reg[3] <= wt[2][2:17]; // stage has 2 rounds
+			wt_reg[4] <= wt[3][2:17]; // stage has 2 rounds
+			wt_reg[5] <= wt[4][2:17]; // stage has 2 rounds
+		end
 	end	
 
 	// get wt wires for the 11 stages
@@ -187,12 +213,16 @@ module sha_11_6_core (
 	// Wire up stages and stage registers
 	reg [0:6][0:7][31:0] acc_reg;
 	always_ff @(posedge clk) begin // Stage Registers
-		acc_reg[0] <= { qa[0], qb[0], qc[0], qd[0], qe[0], qf[0], qg[0], qh[0] };
-		acc_reg[1] <= { qa[2], qb[2], qc[2], qd[2], qe[2], qf[2], qg[2], qh[2] };
-		acc_reg[2] <= { qa[4], qb[4], qc[4], qd[4], qe[4], qf[4], qg[4], qh[4] };
-		acc_reg[3] <= { qa[6], qb[6], qc[6], qd[6], qe[6], qf[6], qg[6], qh[6] };
-		acc_reg[4] <= { qa[8], qb[8], qc[8], qd[8], qe[8], qf[8], qg[8], qh[8] };
-		acc_reg[5] <= { qa[10],qb[10],qc[10],qd[10],qe[10],qf[10],qg[10],qh[10]};
+		if( reset ) begin
+			acc_reg <= 0;
+		end else begin
+			acc_reg[0] <= { qa[0], qb[0], qc[0], qd[0], qe[0], qf[0], qg[0], qh[0] };
+			acc_reg[1] <= { qa[2], qb[2], qc[2], qd[2], qe[2], qf[2], qg[2], qh[2] };
+			acc_reg[2] <= { qa[4], qb[4], qc[4], qd[4], qe[4], qf[4], qg[4], qh[4] };
+			acc_reg[3] <= { qa[6], qb[6], qc[6], qd[6], qe[6], qf[6], qg[6], qh[6] };
+			acc_reg[4] <= { qa[8], qb[8], qc[8], qd[8], qe[8], qf[8], qg[8], qh[8] };
+			acc_reg[5] <= { qa[10],qb[10],qc[10],qd[10],qe[10],qf[10],qg[10],qh[10]};
+		end
 	end
 	always_comb begin // stage inputs (except stage 0)
 		//{ da[0] , db[0] , dc[0] , dd[0] , de[0] , df[0] , dg[0] , dh[0] } = acc_reg[0];
@@ -215,53 +245,62 @@ module sha_11_6_core (
 	logic [0:5][0:7][31:0] hash_reg;
 	logic [0:7][31:0] sum_reg;
 	always_ff @(posedge clk) begin
-		// Pipeline of hash regs
-		hash_reg[1] <= hash_reg[0];
-		hash_reg[2] <= hash_reg[1];
-		hash_reg[3] <= hash_reg[2];
-		hash_reg[4] <= hash_reg[3];
-		hash_reg[5] <= hash_reg[4];
-
-		// Sum reg aligns with hashreg 5
-		for( int ii = 0; ii < 8; ii++ )
-			sum_reg[ii] = hash_reg[4][ii] + acc_reg[4][ii];
-
-		// Input to hash reg pipe 
-		if( init_hash && mode_start == MODE_INIT ) begin // load H* if first sha round
-			hash_reg[0][0] <= 32'h6a09e667;
-			hash_reg[0][1] <= 32'hbb67ae85;
-			hash_reg[0][2] <= 32'h3c6ef372;
-			hash_reg[0][3] <= 32'ha54ff53a;
-			hash_reg[0][4] <= 32'h510e527f;
-			hash_reg[0][5] <= 32'h9b05688c;
-			hash_reg[0][6] <= 32'h1f83d9ab;
-			hash_reg[0][7] <= 32'h5be0cd19;		
-		end else if( done && mode_done != MODE_REDO  ) begin // accumulate and hold this hash, but discard on REDO
-			hash_reg[0] <= sum_reg;
+		if( reset ) begin
+			hash_reg <= 0;
 		end else begin
-			hash_reg[0] <= hash_reg[5];
-		end
+			// Pipeline of hash regs
+			if( hshift ) begin
+				hash_reg[1] <= hash_reg[0];
+				hash_reg[2] <= hash_reg[1];
+				hash_reg[3] <= hash_reg[2];
+				hash_reg[4] <= hash_reg[3];
+				hash_reg[5] <= hash_reg[4];
+
+				// Sum reg aligns with hashreg 5
+				for( int ii = 0; ii < 8; ii++ )
+					sum_reg[ii] <= hash_reg[4][ii] + acc_reg[4][ii];
+
+				// Input to hash reg pipe 
+				if( init_hash && mode_start == MODE_INIT ) begin // load H* if first sha round
+					hash_reg[0][0] <= 32'h6a09e667;
+					hash_reg[0][1] <= 32'hbb67ae85;
+					hash_reg[0][2] <= 32'h3c6ef372;
+					hash_reg[0][3] <= 32'ha54ff53a;
+					hash_reg[0][4] <= 32'h510e527f;
+					hash_reg[0][5] <= 32'h9b05688c;
+					hash_reg[0][6] <= 32'h1f83d9ab;
+					hash_reg[0][7] <= 32'h5be0cd19;	
+				end else if( init_hash && mode_start == !MODE_REDO ) begin // Load old
+					hash_reg[0] <= sum_reg;
+				end else begin
+					hash_reg[0] <= hash_reg[0];
+				end	
+			end // hshift
+		end // !reset
 	end
 
 	// First input round
 		// starting hash
 	always_comb begin
-		if( init_hash && mode_start == MODE_INIT ) begin // load standard start value
-			da[0] = 32'h6a09e667;
-			db[0] = 32'hbb67ae85;
-			dc[0] = 32'h3c6ef372;
-			dd[0] = 32'ha54ff53a;
-			de[0] = 32'h510e527f;
-			df[0] = 32'h9b05688c;
-			dg[0] = 32'h1f83d9ab;
-			dh[0] = 32'h5be0cd19;   // Step 2 for 6.1.2 and 6.2.2
-		end else if ( init_hash && done & mode_done != MODE_REDO ) begin // overlap start/end non init, use sum to continue but not if REDO
-			{ da[0] , db[0] , dc[0] , dd[0] , de[0] , df[0] , dg[0] , dh[0] } = sum_reg[5];
-	   end else if( init_hash ) begin // load current hash
-			{ da[0] , db[0] , dc[0] , dd[0] , de[0] , df[0] , dg[0] , dh[0] } = hash_reg[5];
+		if( init_hash ) begin
+			if( mode_start == MODE_INIT ) begin // load standard start value
+				da[0] = 32'h6a09e667;
+				db[0] = 32'hbb67ae85;
+				dc[0] = 32'h3c6ef372;
+				dd[0] = 32'ha54ff53a;
+				de[0] = 32'h510e527f;
+				df[0] = 32'h9b05688c;
+				dg[0] = 32'h1f83d9ab;
+				dh[0] = 32'h5be0cd19;   // Step 2 for 6.1.2 and 6.2.2
+			end else if ( mode_start == MODE_HASH ) begin // begin with sum hash
+				{ da[0] , db[0] , dc[0] , dd[0] , de[0] , df[0] , dg[0] , dh[0] } = sum_reg;
+			end else if( init_hash && mode_start == MODE_REDO) begin // reload old hash
+				{ da[0] , db[0] , dc[0] , dd[0] , de[0] , df[0] , dg[0] , dh[0] } = hash_reg[5];
+			end
 		end else begin // else normal case feed from acc reg
-			{ da[0] , db[0] , dc[0] , dd[0] , de[0] , df[0] , dg[0] , dh[0] } = acc_reg[5];
-		end		
+				{ da[0] , db[0] , dc[0] , dd[0] , de[0] , df[0] , dg[0] , dh[0] } = acc_reg[5];
+		end	
+
 	end
 	
 	// Output is always the sum
