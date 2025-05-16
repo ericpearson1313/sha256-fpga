@@ -260,20 +260,21 @@ assign speaker_n = !speaker;
 		end else begin
 			if( state_count == 0 ) begin
 				state_count <= ( sha_go ) ? 1 : 0;
-			end else if( state_count == 129 ) begin
-				state_count <= ( hit | sha_go ) ? 66 : 0; // redo or last pass after hit
+			end else if( state_count == 108 ) begin
+				state_count <= ( sha_go ) ? 73 : 0; // redo or last pass after hit
 			end else begin
 				state_count <= state_count + 1;
 			end
 		end
 	end
 	
-	assign get_msg = ( state_count == 1 || ( state_count == 129 && sha_go ) ) ? 1'b1 : 1'b0;
-	assign  ld_msg = ( state_count == 2 || state_count == 66 ) ? 1'b1 : 1'b0;
-	assign msg_idx = ( state_count == 66 ) ? 1'b1 : 1'b0;
-	assign mode    = ( state_count == 2 ) ? MODE_INIT : MODE_REDO;
-	assign ld_hit  = ( state_count == 129 && hit ) ? 1'b1 : 1'b0;
-	
+	assign  ld_msg = ( ( state_count >=  1 && state_count <=  6 ) ||
+							 ( state_count >= 37 && state_count <= 42 ) ||
+							 ( state_count >= 73 && state_count <= 78 ) ) ? 1'b1 : 1'b0;
+	assign mode    =   ( state_count >=  1 && state_count <=  6 ) ? MODE_INIT :
+							 ( state_count >= 37 && state_count <= 42 ) ? MODE_HASH :
+							 ( state_count >= 73 && state_count <= 78 ) ? MODE_REDO : 0;
+	assign msg_idx =   ( state_count >=  1 && state_count <=  6 ) ? 1'b0 : 1'b1;
 	
 	// Padded Input Message (2 blocks)
 	logic [0:1][0:63][7:0] bc_msg; // endian byte stram
@@ -290,40 +291,10 @@ assign speaker_n = !speaker;
 	logic [255:0] difficulty;
 	assign difficulty = bc_msg[1][9:11]<<((bc_msg[1][8]-3)<<3);
 	
-	// Nonce handling
-	reg [31:0] nonce = 32'h7a33330e; // orig endian hit;
-	reg [0:4][31:0] nonce_pipe = 0;
-	always_ff @(posedge clk) begin
-		// Nonce creations
-		if( ld_hit ) begin
-			nonce <= nonce_pipe[4];
-		end else if( get_msg ) begin
-			nonce[31:20] <= nonce[31:20]; 
-			nonce[19:0] <= nonce[19:0] + 1;
-		end else begin
-			nonce <= nonce;
-		end
-							
-		// Pipeline of Nonces
-		nonce_pipe[0] <= ( get_msg || ld_hit ) ? nonce : nonce_pipe[0];	// nonce input
-		nonce_pipe[1] <= ( ld_msg  ) ? nonce_pipe[0] : nonce_pipe[1]; // Sha1 input
-		nonce_pipe[2] <= ( ovalid  ) ? nonce_pipe[1] : nonce_pipe[2]; // Sha1 output and sha2 input 
-		nonce_pipe[3] <= ( ovalid2 ) ? nonce_pipe[2] : nonce_pipe[3]; // sha2 output
-		nonce_pipe[4] <= ( hit & continuous ) ? nonce_pipe[3] : nonce_pipe[4]; // snapshot of hit case
-	end
-
-	// Load input buffer message
-	reg [0:1][0:15][31:0] ibuf = 0;
-	always_ff @(posedge clk) begin
-		if( get_msg ) begin
-			ibuf[0] <= in_msg[0];
-			ibuf[1] <= { 
-					in_msg[1][0:2], 
-					nonce[7:0], nonce[15:8], nonce[23:16], nonce[31:24], 
-					in_msg[1][4:15] 
-					};
-		end
-	end
+	// Nonce counter generator
+	reg [31:0] nonce = 0;//32'h7a33330e; // orig endian hit;
+	always_ff @(posedge clk) 
+		nonce <= ( ld_msg ) ? nonce + 1 : nonce;
 
 	
 	logic ovalid;
@@ -346,7 +317,10 @@ assign speaker_n = !speaker;
 		// Input strobe and message
 		.i_valid( ld_msg ),
 		.i_mode( mode ),
-		.i_data( (msg_idx) ? ibuf[1] : ibuf[0] ),
+		.i_data( (msg_idx) ? 
+						{ in_msg[1][0:2], 
+						  nonce[7:0], nonce[15:8], nonce[23:16], nonce[31:24], 
+						  in_msg[1][4:15] } : in_msg[0] ),
 		// Output 
 		.o_valid( ovalid ),
 		.o_data( sha_out )
@@ -395,15 +369,28 @@ assign speaker_n = !speaker;
 	always_comb 
 		for( int ii = 0; ii < 8; ii++ )
 			hash_word[ii] = hash2[ii];  // swaps word order to create the protocol number [255:0] word
-			
-	assign hit = ( hash_word[7] == 0 ) ? 1'b1 : 1'b0; // This set to diff1 for now need nBits threshold tool
+	
+	
+	assign hit = ( ovalid2 && sha_out2[31:0] == 0 ) ? 1'b1 : 1'b0; 
+	
+	logic [31:0] hit_nonce;
+	logic hit_flag;
+	always_ff @(posedge clk) begin
+		if( reset ) begin
+			hit_flag <= 0;
+			hit_nonce <= 0;
+		end else begin
+			hit_flag <= ( hit & continuous ) ? 1'b1 : hit_flag;
+			hit_nonce <= ( hit_flag ) ? hit_nonce : nonce - 12;
+		end
+	end
 
 	///////////////////////////////////////
 	// Stat counter timer and rate counters
 	///////////////////////////////////////
 	
 	logic inc_stat;
-	assign inc_stat = (state_count == 100); // doing 1 has calc, guaranteed
+	assign inc_stat = ovalid2; //(state_count == 100); // doing 1 has calc, guaranteed
 	logic [47:0] op_count;
 	always_ff@( posedge clk ) begin
 		op_count <= ( inc_stat ) ? op_count + 1 : op_count;
@@ -567,7 +554,7 @@ assign speaker_n = !speaker;
 	//hex_overlay #(.LEN(64 )) _id12(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d26), .out( id_str[12]),.in( difficulty  ) );
 	
 	//hex_overlay #(.LEN( 8 )) _id13(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d68), .y('d20), .out( id_str[13]),.in( nonce_pipe[1]  ) );
-	hex_overlay #(.LEN( 8 )) _id14(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d68), .y('d24), .out( id_str[14]),.in( nonce_pipe[2]  ) );
+	hex_overlay #(.LEN( 8 )) _id14(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d68), .y('d24), .out( id_str[14]),.in( nonce ) );//nonce_pipe[2]  ) );
 	//bin_overlay #(.LEN( 1 )) _id15(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.bin_char(bin_char), .x('d78), .y('d24), .out( id_str[15]),.in( hit  ) );
 
 	//string_overlay #(.LEN(7)) _id16(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('d68), .y('d20), .out( id_str[16]), .str( "1st SHA" ) );
