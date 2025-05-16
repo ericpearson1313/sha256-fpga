@@ -219,12 +219,9 @@ assign speaker_n = !speaker;
 /////////////////////	
 
 
-	// Key data structures
-	// two 512 bit message blocks
-	logic [0:1][0:15][31:0] ibuf;
 
-	// 256 bit sha2 message hash
-	logic [255:0] hash;
+
+
 
 
 	// State machine
@@ -294,37 +291,31 @@ assign speaker_n = !speaker;
 	assign difficulty = bc_msg[1][9:11]<<((bc_msg[1][8]-3)<<3);
 	
 	// Nonce handling
-	logic [31:0] nonce;
-	logic [0:4][31:0] nonce_pipe;
+	reg [31:0] nonce = 32'h7a33330e; // orig endian hit;
+	reg [0:4][31:0] nonce_pipe = 0;
 	always_ff @(posedge clk) begin
-		if( reset ) begin
-			nonce <= 32'h7a33330e; // orig endian hit
-			nonce_pipe <= 0;
-		end else begin	
-			// Nonce creations
-			if( ld_hit ) begin
-				nonce <= nonce_pipe[4];
-			end else if( get_msg ) begin
-				nonce[31:20] <= nonce[31:20]; 
-				nonce[19:0] <= nonce[19:0] + 1;
-			end else begin
-				nonce <= nonce;
-			end
-								
-			// Pipeline of Nonces
-			nonce_pipe[0] <= ( get_msg || ld_hit ) ? nonce : nonce_pipe[0];	// nonce input
-			nonce_pipe[1] <= ( ld_msg  ) ? nonce_pipe[0] : nonce_pipe[1]; // Sha1 input
-			nonce_pipe[2] <= ( ovalid  ) ? nonce_pipe[1] : nonce_pipe[2]; // Sha1 output and sha2 input 
-			nonce_pipe[3] <= ( ovalid2 ) ? nonce_pipe[2] : nonce_pipe[3]; // sha2 output
-			nonce_pipe[4] <= ( hit & continuous ) ? nonce_pipe[3] : nonce_pipe[4]; // snapshot of hit case
+		// Nonce creations
+		if( ld_hit ) begin
+			nonce <= nonce_pipe[4];
+		end else if( get_msg ) begin
+			nonce[31:20] <= nonce[31:20]; 
+			nonce[19:0] <= nonce[19:0] + 1;
+		end else begin
+			nonce <= nonce;
 		end
+							
+		// Pipeline of Nonces
+		nonce_pipe[0] <= ( get_msg || ld_hit ) ? nonce : nonce_pipe[0];	// nonce input
+		nonce_pipe[1] <= ( ld_msg  ) ? nonce_pipe[0] : nonce_pipe[1]; // Sha1 input
+		nonce_pipe[2] <= ( ovalid  ) ? nonce_pipe[1] : nonce_pipe[2]; // Sha1 output and sha2 input 
+		nonce_pipe[3] <= ( ovalid2 ) ? nonce_pipe[2] : nonce_pipe[3]; // sha2 output
+		nonce_pipe[4] <= ( hit & continuous ) ? nonce_pipe[3] : nonce_pipe[4]; // snapshot of hit case
 	end
 
 	// Load input buffer message
+	reg [0:1][0:15][31:0] ibuf = 0;
 	always_ff @(posedge clk) begin
-		if( reset ) begin
-			ibuf <= 0;
-		end else if( get_msg ) begin
+		if( get_msg ) begin
 			ibuf[0] <= in_msg[0];
 			ibuf[1] <= { 
 					in_msg[1][0:2], 
@@ -363,11 +354,10 @@ assign speaker_n = !speaker;
 	
 
 	// Latch output hash for display
+	// 256 bit sha2 message hash
+	reg [255:0] hash = {256{1'b1}};
 	always_ff @(posedge clk) 
-		if( reset ) 
-			hash <= ~0; // not a hit
-		else
-			hash <= ( ovalid ) ? sha_out : hash;
+		hash <= ( ovalid ) ? sha_out : hash;
 
 	logic ovalid2;
 	logic [255:0] sha_out2;
@@ -396,12 +386,9 @@ assign speaker_n = !speaker;
 	);	
 	
 	// Latch output hash for display
-	logic [0:7][31:0] hash2;
+	logic [0:7][31:0] hash2 = {256{1'b1}};
 	always_ff @(posedge clk) 
-		if( reset ) 
-			hash2 <= ~0; // not a hit
-		else	
-			hash2 <= ( ovalid2 ) ? sha_out2 : hash2;
+		hash2 <= ( ovalid2 ) ? sha_out2 : hash2;
 		
 	logic [7:0][31:0] hash_word;
 	
@@ -448,7 +435,7 @@ assign speaker_n = !speaker;
 	////       VIDEO
 	////
 	//////////////////////////////////
-
+`define WVGA
 `ifdef WVGA
 	// HDMI reset
 	logic [3:0] hdmi_reg;
@@ -563,29 +550,29 @@ assign speaker_n = !speaker;
 
 	// Overlay Text - Dynamic
 	logic [31:0] id_str;
-	string_overlay #(.LEN(18)) _id0(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('h48), .y('h09), .out( id_str[0]), .str( "FIPS 180-4 SHA-256" ) );
-	hex_overlay    #(.LEN(12 )) _id1(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('h50),.y('d58), .out( id_str[1]), .in( op_count[47:0] ) );
+	//string_overlay #(.LEN(18)) _id0(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('h48), .y('h09), .out( id_str[0]), .str( "FIPS 180-4 SHA-256" ) );
+	//hex_overlay    #(.LEN(12 )) _id1(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('h50),.y('d58), .out( id_str[1]), .in( op_count[47:0] ) );
    //bin_overlay    #(.LEN(1 )) _id2(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.bin_char(bin_char), .x('h46),.y('h09), .out( id_str[2]), .in( disp_id == 32'h0E96_0001 ) );
 	//string_overlay #(.LEN(14)) _id3(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('d119),.y('d58), .out( id_str[3]), .str( "commit 0123abc" ) );
-	hex_overlay    #(.LEN(8 )) _id4(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('h50),.y('d54), .out( id_str[4]), .in( oppersec_latch[31:0] ) );
-	string_overlay #(.LEN(16)) _id5(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('h48), .y('d56), .out( id_str[5]), .str( "Total Operations" ) );
-	string_overlay #(.LEN(14)) _id6(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('h48), .y('d52), .out( id_str[6]), .str( "Operations/sec" ) );
+	//hex_overlay    #(.LEN(8 )) _id4(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('h50),.y('d54), .out( id_str[4]), .in( oppersec_latch[31:0] ) );
+	//string_overlay #(.LEN(16)) _id5(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('h48), .y('d56), .out( id_str[5]), .str( "Total Operations" ) );
+	//string_overlay #(.LEN(14)) _id6(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('h48), .y('d52), .out( id_str[6]), .str( "Operations/sec" ) );
 
 	// Display two 512 bit message blocks and 256 bit output hash
-	hex_overlay #(.LEN(128)) _id7(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d16), .out( id_str[7]), .in( ibuf[0] ) );
-	hex_overlay #(.LEN(128)) _id8(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d18), .out( id_str[8]), .in( ibuf[1] ) );
-	hex_overlay #(.LEN(64 )) _id9(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d20), .out( id_str[9]), .in( hash    ) );
-	hex_overlay #(.LEN(64 )) _id10(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d22), .out( id_str[10]),.in( hash2    ) );
-	hex_overlay #(.LEN(64 )) _id11(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d24), .out( id_str[11]),.in( hash_word  ) );
-	hex_overlay #(.LEN(64 )) _id12(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d26), .out( id_str[12]),.in( difficulty  ) );
+	//hex_overlay #(.LEN(128)) _id7(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d16), .out( id_str[7]), .in( ibuf[0] ) );
+	//hex_overlay #(.LEN(128)) _id8(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d18), .out( id_str[8]), .in( ibuf[1] ) );
+	//hex_overlay #(.LEN(64 )) _id9(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d20), .out( id_str[9]), .in( hash    ) );
+	//hex_overlay #(.LEN(64 )) _id10(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d22), .out( id_str[10]),.in( hash2    ) );
+	//hex_overlay #(.LEN(64 )) _id11(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d24), .out( id_str[11]),.in( hash_word  ) );
+	//hex_overlay #(.LEN(64 )) _id12(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d1 ), .y('d26), .out( id_str[12]),.in( difficulty  ) );
 	
 	//hex_overlay #(.LEN( 8 )) _id13(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d68), .y('d20), .out( id_str[13]),.in( nonce_pipe[1]  ) );
 	hex_overlay #(.LEN( 8 )) _id14(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.hex_char(hex_char), .x('d68), .y('d24), .out( id_str[14]),.in( nonce_pipe[2]  ) );
-	bin_overlay #(.LEN( 1 )) _id15(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.bin_char(bin_char), .x('d78), .y('d24), .out( id_str[15]),.in( hit  ) );
+	//bin_overlay #(.LEN( 1 )) _id15(.clk(hdmi_clk),.reset(reset), .char_x(char_x), .char_y(char_y),.bin_char(bin_char), .x('d78), .y('d24), .out( id_str[15]),.in( hit  ) );
 
-	string_overlay #(.LEN(7)) _id16(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('d68), .y('d20), .out( id_str[16]), .str( "1st SHA" ) );
-	string_overlay #(.LEN(7)) _id17(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('d68), .y('d22), .out( id_str[17]), .str( "2nd SHA" ) );
-	string_overlay #(.LEN(10)) _id18(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('d68), .y('d26), .out( id_str[18]), .str( "difficulty" ) );
+	//string_overlay #(.LEN(7)) _id16(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('d68), .y('d20), .out( id_str[16]), .str( "1st SHA" ) );
+	//string_overlay #(.LEN(7)) _id17(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('d68), .y('d22), .out( id_str[17]), .str( "2nd SHA" ) );
+	//string_overlay #(.LEN(10)) _id18(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('d68), .y('d26), .out( id_str[18]), .str( "difficulty" ) );
 	
 
 	assign overlay = ( text_ovl && text_color == 0 ) | // normal text
