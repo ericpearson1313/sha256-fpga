@@ -260,7 +260,7 @@ module sha_11_12_core (
 				if( init_hash ) begin // load input to first round always
 					hash_reg[11] <= { na, nb, nc, nd, ne, nf, ng, nh };
 				end else begin  // mid wrap                       
-					hash_reg[11] <= hash_reg[5];
+					hash_reg[11] <= hash_reg[10];
 				end					
 
 				// Sum reg 10 aligns with hashreg 8
