@@ -256,9 +256,9 @@ assign speaker_n = !speaker;
 `define PIPE12
 `ifdef PIPE12	
 	// Control Logic
-	localparam BL = 11;   // Burst Length
+	localparam BL = 6;   // Burst Length
 	localparam PD = BL*6; // Pipe Delay
-	// 72 cycles to do 12 rounds
+	// PD cycles to do BL rounds
 	logic [7:0] state_count;
 	always_ff @(posedge clk) begin
 		if( reset ) begin
@@ -343,9 +343,9 @@ assign speaker_n = !speaker;
 	//	.hash( sha_out )
 	//);
 
-//	sha_11_6_core _sha_core (
+	sha_11_6_core _sha_core (
 //	sha_11_12_core _sha_core (
-	sha_11_11_core _sha_core (
+//	sha_11_11_core _sha_core (
 		.clk ( clk ),
 		.reset( 1'b0 ), // use por defaults
 		// Input strobe and message
@@ -381,9 +381,9 @@ assign speaker_n = !speaker;
 	//	.hash( sha_out2 )
 	//);	
 
-//	sha_11_6_core _sha_core2 (
+	sha_11_6_core _sha_core2 (
 //	sha_11_12_core _sha_core2 (
-	sha_11_11_core _sha_core2 (
+//	sha_11_11_core _sha_core2 (
 		.clk ( clk ),
 		.reset( 1'b0 ), // use por defaults
 		// Input strobe and message
