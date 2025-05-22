@@ -85,7 +85,7 @@ module sha_chip
 	assign digio = 7'bzzz_zzzz;
 	
 	// Rs232
-	assign tx2323 = rx232; // wire through
+	assign tx232 = rx232; // wire through
 	
 	// Safe the High Voltage 
 	assign lt3420_charge = 1'b0;
@@ -597,7 +597,7 @@ assign speaker_n = !speaker;
 	//string_overlay #(.LEN(7)) _id17(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('d68), .y('d22), .out( id_str[17]), .str( "2nd SHA" ) );
 	//string_overlay #(.LEN(10)) _id18(.clk(hdmi_clk), .reset(reset), .char_x(char_x), .char_y(char_y),.ascii_char(ascii_char), .x('d68), .y('d26), .out( id_str[18]), .str( "difficulty" ) );
 	
-
+	logic overlay;
 	assign overlay = ( text_ovl && text_color == 0 ) | // normal text
 						  (|id_str  ) ;
 	

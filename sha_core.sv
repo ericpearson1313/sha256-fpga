@@ -30,15 +30,12 @@ module sha_11_11_core (
 	// [col][row]
 	reg [0:10][0:5] tmat = 0; // t matrix
 	reg [67:0] t = 0;
-	reg [67:0][1:0] md = 0;
 	
 	always_ff @(posedge clk) begin
 		if( reset ) begin
 			t <= 0;
-			md <= 0;
 		end else begin
 			t <=  {  t[66:0], i_valid };
-			md <= { md[66:0], i_mode     };
 		end
 	end
 	
@@ -63,14 +60,10 @@ module sha_11_11_core (
 
 	// Control strobes generated based on delay lines
 	
-	assign o_valid = t[66];
+	assign o_valid = t[65];
 	assign wt_load = i_valid;
 	assign hshift = |t[65:0]; // shift H back to x6 start but need to shift out last hashes
-	
 	assign init_hash = t[0];
-	assign mode_start = md[0];
-	assign done = t[66];
-	assign mode_done = md[66];
 	
 	///////
 	// Kt
@@ -222,13 +215,14 @@ module sha_11_11_core (
 			acc_reg <= 0;
 		end else begin
 			// Round outputs registered
-			for( int ii = 0; ii < 11; ii++ ) 
+			for( int ii = 0; ii < 10; ii++ ) 
 				acc_reg[ii] <= { qa[ii], qb[ii], qc[ii], qd[ii], qe[ii], qf[ii], qg[ii], qh[ii] };
 			// Mux next starting round
+			acc_reg[10] <= { na, nb, nc, nd, ne, nf, ng, nh };
 	  	end
 	end
 	always_comb begin // stage inputs (except stage 0)
-		{ da[0] , db[0] , dc[0] , dd[0] , de[0] , df[0] , dg[0] , dh[0] } <= { na, nb, nc, nd, ne, nf, ng, nh };
+		{ da[0] , db[0] , dc[0] , dd[0] , de[0] , df[0] , dg[0] , dh[0] } <= acc_reg[10];
 		for( int ii = 1; ii < 11; ii++ ) 
 				{ da[ii] , db[ii] , dc[ii] , dd[ii] , de[ii] , df[ii] , dg[ii] , dh[ii] } = acc_reg[ii-1];
 	end
@@ -241,7 +235,7 @@ module sha_11_11_core (
 	///////
 	
 	reg [0:10][0:7][31:0] hash_reg = 0;
-	reg [9:10][0:7][31:0] sum_reg = 0;
+	reg [9:9][0:7][31:0] sum_reg = 0;
 	always_ff @(posedge clk) begin
 		if( reset ) begin
 			hash_reg <= 0;
@@ -249,20 +243,15 @@ module sha_11_11_core (
 		end else begin
 			// Pipeline of hash regs
 			if( hshift ) begin
+				// hash 0 is the hash entry point
+				hash_reg[0] <= ( init_hash ) ? acc_reg[10] : hash_reg[10];
 				// hast 1..10 get prev
 				for( int ii = 1; ii < 11; ii++ )
 					hash_reg[ii] <= hash_reg[ii-1];
-				// hash 11 is the hash entry point
-				if( init_hash ) begin // load input to first round always
-					hash_reg[0] <= { na, nb, nc, nd, ne, nf, ng, nh };
-				end else begin  // mid wrap                       
-					hash_reg[0] <= hash_reg[10];
-				end					
 
-				// Sum reg 10 aligns with hashreg 8
+				// Sum reg 9 fed by hashreg 8
 				for( int ii = 0; ii < 8; ii++ ) begin
 					sum_reg[9][ii] <= hash_reg[8][ii] + acc_reg[8][ii];
-					sum_reg[10][ii] <= sum_reg[9][ii];
 				end
 			end // hshift
 		end // !reset
@@ -271,7 +260,7 @@ module sha_11_11_core (
 	// First input round
 	// starting hash, or just continuing a multipass loop
 	always_comb begin
-		if( init_hash && mode_start == MODE_INIT ) begin // load standard start value
+		if( i_valid && i_mode == MODE_INIT ) begin // load standard start value
 			na = 32'h6a09e667;
 			nb = 32'hbb67ae85;
 			nc = 32'h3c6ef372;
@@ -280,18 +269,18 @@ module sha_11_11_core (
 			nf = 32'h9b05688c;
 			ng = 32'h1f83d9ab;
 			nh = 32'h5be0cd19;   // Step 2 for 6.1.2 and 6.2.2
-		end else if( init_hash && mode_start == MODE_HASH ) begin // begin with sum hash
-			{ na, nb, nc, nd, ne, nf, ng, nh } = sum_reg[10];
-		end else if( init_hash ) begin // else reload old hash
-			{ na, nb, nc, nd, ne, nf, ng, nh } = hash_reg[10];
+		end else if(  i_valid && i_mode == MODE_HASH ) begin // begin with sum hash
+			{ na, nb, nc, nd, ne, nf, ng, nh } = sum_reg[9];
+		end else if( i_valid ) begin // else reload old hash
+			{ na, nb, nc, nd, ne, nf, ng, nh } = hash_reg[9];
 		end else begin // else normal case feed from acc reg
-			{ na, nb, nc, nd, ne, nf, ng, nh } = acc_reg[10];
+			{ na, nb, nc, nd, ne, nf, ng, nh } = { qa[10], qb[10], qc[10], qd[10], qe[10], qf[10], qg[10], qh[10] };
 		end	
 	end
 
 	
 	// Output is always the sum
-	assign o_data = sum_reg[10];
+	assign o_data = sum_reg[9];
 	
 endmodule // sha_11_11_core
 
@@ -369,9 +358,7 @@ module sha_11_12_core (
 	
 	assign init_hash = t[0];
 	assign mode_start = md[0];
-	assign done = t[72];
-	assign mode_done = md[72];
-	
+
 	///////
 	// Kt
 	///////
@@ -629,6 +616,7 @@ module sha_11_6_core (
 	logic wt_load;	
 	logic hshift; // to keep in phase
 	logic init_hash;	
+	logic done;
 	logic [1:0] mode_start;
 	logic [1:0] mode_done;
 
