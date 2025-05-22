@@ -242,7 +242,7 @@ module sha_11_12_core (
 	// HASH 
 	///////
 	
-	reg [0:5][0:7][31:0] hash_reg = 0;
+	reg [0:11][0:7][31:0] hash_reg = 0;
 	reg [10:11][0:7][31:0] sum_reg = 0;
 	always_ff @(posedge clk) begin
 		if( reset ) begin
