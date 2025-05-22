@@ -75,7 +75,7 @@ module testbench( );
 		//	.hash( hash )
 		//);
 
-	 	sha_11_12_core _uut (
+	 	sha_11_11_core _uut (
 			.clk ( clk ),
 			.reset( reset ),
 		// Input strobe and message
@@ -93,7 +93,10 @@ module testbench( );
 				hash_out <= { hash_out[1:3], hash };
 
 	logic [0:3][0:63][7:0] bc_msg; 
-	logic [0:2][0:15][31:0] in_msg;				
+	logic [0:2][0:15][31:0] in_msg;	
+
+	localparam BL = 11;   // Burst Length
+	localparam PD = BL*6; // Pipe Delay
 
 	// Test sequence
 	initial begin
@@ -127,7 +130,7 @@ module testbench( );
 						32'h00000000,
 						32'h00000018  };
 		mode = MODE_INIT; // first cycle		
-		for( int ii = 0; ii < 72; ii++ ) begin
+		for( int ii = 0; ii < PD; ii++ ) begin
 			ivalid = ( ii == 0 ) ? 1'b1 : 1'b0;
 			msg = ( ii != 0 ) ? 0 :  
 			      {	32'h61626380,	// "abc"
@@ -157,8 +160,8 @@ module testbench( );
       for( int ii = 0; ii < 15; ii++ ) @(posedge clk); // +15 cycles		
 				
 
-		for( int ii = 0; ii < (3*72+1); ii++ ) begin
-			ivalid = ( ii == 0 || ii == 72 || ii == 144 ) ? 1'b1 : 1'b0;
+		for( int ii = 0; ii < (3*PD+1); ii++ ) begin
+			ivalid = ( ii == 0 || ii == PD || ii == 2*PD ) ? 1'b1 : 1'b0;
 			if( ii == 0 ) begin
 			mode = MODE_INIT;			
 			msg = {	32'h61626364,	// "abc"
@@ -177,8 +180,8 @@ module testbench( );
 						32'h6E6F7071,
 						32'h80000000,
 						32'h00000000  };
-			end else if ( ii == 72 || ii == 144 ) begin
-			mode = ( ii == 72 ) ? MODE_HASH : MODE_REDO; // swapped for pipelined version
+			end else if ( ii == PD || ii == 2*PD ) begin
+			mode = ( ii == PD ) ? MODE_HASH : MODE_REDO; // swapped for pipelined version
 			msg = {	32'h00000000,	// "abc"
 						32'h00000000,
 						32'h00000000,
@@ -288,14 +291,14 @@ module testbench( );
 		// Run through 2 blocks 
 		msg = in_msg[0];
 		mode = MODE_INIT;
-		for( int ii = 0; ii < 72; ii++ ) begin
+		for( int ii = 0; ii < PD; ii++ ) begin
 			ivalid = ( ii == 0 ) ? 1'b1 : 1'b0;
 			@( posedge clk );
 		end
 		
 		msg = in_msg[1];
 		mode = MODE_HASH;
-		for( int ii = 0; ii < 72; ii++ ) begin
+		for( int ii = 0; ii < PD; ii++ ) begin
 			ivalid = ( ii == 0 ) ? 1'b1 : 1'b0;
 			@( posedge clk );
 		end
@@ -318,7 +321,7 @@ module testbench( );
 		
 		msg = in_msg[2]; 
 		mode = MODE_INIT;
-		for( int ii = 0; ii < 72; ii++ ) begin
+		for( int ii = 0; ii < PD; ii++ ) begin
 			ivalid = ( ii == 0 ) ? 1'b1 : 1'b0;
 			@( posedge clk );
 		end	

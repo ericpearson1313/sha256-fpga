@@ -253,6 +253,37 @@ assign speaker_n = !speaker;
 	assign beep = hit & continuous;										
 	assign sha_go = short_fire || continuous;
 	
+`define PIPE12
+`ifdef PIPE12	
+	// Control Logic
+	localparam BL = 11;   // Burst Length
+	localparam PD = BL*6; // Pipe Delay
+	// 72 cycles to do 12 rounds
+	logic [7:0] state_count;
+	always_ff @(posedge clk) begin
+		if( reset ) begin
+			state_count <= 0;
+		end else begin
+			if( state_count == 0 ) begin
+				state_count <= ( sha_go ) ? 1 : 0;
+			end else if( state_count == (3*PD) ) begin
+				state_count <= ( sha_go ) ? (2*PD+1) : 0; // redo or last pass after hit
+			end else begin
+				state_count <= state_count + 1;
+			end
+		end
+	end
+	
+	assign  ld_msg = ( ( state_count >= (0*PD+1) && state_count <= (0*PD+BL) ) ||
+							 ( state_count >= (1*PD+1) && state_count <= (1*PD+BL) ) ||
+							 ( state_count >= (2*PD+1) && state_count <= (2*PD+BL) ) ) ? 1'b1 : 1'b0;
+	assign mode    =   ( state_count >= (0*PD+1) && state_count <= (0*PD+BL) ) ? MODE_INIT :
+							 ( state_count >= (1*PD+1) && state_count <= (1*PD+BL) ) ? MODE_HASH :
+							 ( state_count >= (2*PD+1) && state_count <= (2*PD+BL) ) ? MODE_REDO : 0;
+	assign msg_idx =   ( state_count >=       1  && state_count <=       BL  ) ? 1'b0 : 1'b1;
+`endif // pipe12
+
+`ifdef PIPE6	
 	logic [7:0] state_count;
 	always_ff @(posedge clk) begin
 		if( reset ) begin
@@ -275,7 +306,8 @@ assign speaker_n = !speaker;
 							 ( state_count >= 37 && state_count <= 42 ) ? MODE_HASH :
 							 ( state_count >= 73 && state_count <= 78 ) ? MODE_REDO : 0;
 	assign msg_idx =   ( state_count >=  1 && state_count <=  6 ) ? 1'b0 : 1'b1;
-	
+`endif // pipe6
+
 	// Padded Input Message (2 blocks)
 	logic [0:1][0:63][7:0] bc_msg; // endian byte stram
 	logic [0:1][0:15][31:0] in_msg;	// SHA input format
@@ -311,7 +343,9 @@ assign speaker_n = !speaker;
 	//	.hash( sha_out )
 	//);
 
-	sha_11_6_core _sha_core (
+//	sha_11_6_core _sha_core (
+//	sha_11_12_core _sha_core (
+	sha_11_11_core _sha_core (
 		.clk ( clk ),
 		.reset( 1'b0 ), // use por defaults
 		// Input strobe and message
@@ -347,7 +381,9 @@ assign speaker_n = !speaker;
 	//	.hash( sha_out2 )
 	//);	
 
-	sha_11_6_core _sha_core2 (
+//	sha_11_6_core _sha_core2 (
+//	sha_11_12_core _sha_core2 (
+	sha_11_11_core _sha_core2 (
 		.clk ( clk ),
 		.reset( 1'b0 ), // use por defaults
 		// Input strobe and message
