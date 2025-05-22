@@ -1,3 +1,305 @@
+// 11 core, 12 hashes in 72 cycles
+// Increase clock rate by using availble (6k) registers. 
+module sha_11_12_core (
+	input logic clk,
+	input logic reset, // sim only, fpga leave tied to 1'b0
+	// Input strobe and message
+	input logic 		  i_valid,
+	output logic 		  i_ready, 
+	input logic [0:15][31:0] i_data,
+	input logic	[1:0]	  i_mode, 
+	// Output 
+	output logic        o_valid,
+	output logic [0:7][31:0] o_data
+	);
+
+	localparam MODE_INIT = 1;	// Will init with H* at start (both input and REG)
+	localparam MODE_HASH = 0;	// starts with REG and will Update reg at END (Normal steady state(
+	localparam MODE_REDO = 3;  // starts with Reg, but discards value at end (keeping REG unaltered for REDO
+	
+	
+	// Control logic
+	logic [0:10] kt_shift;	
+	logic wt_shift;
+	logic wt_load;	
+	logic hshift; // to keep in phase
+	logic init_hash;	
+	logic [1:0] mode_start;
+	logic [1:0] mode_done;
+
+	// [col][row]
+	reg [0:11][0:5] tmat = 0; // t matrix
+	reg [73:0] t = 0;
+	reg [73:0][1:0] md = 0;
+	
+	always_ff @(posedge clk) begin
+		if( reset ) begin
+			t <= 0;
+			md <= 0;
+		end else begin
+			t <=  {  t[72:0], i_valid };
+			md <= { md[72:0], i_mode     };
+		end
+	end
+	
+	// 2D array tracking i valid through the passes
+	always_ff @(posedge clk) begin
+		if( reset ) begin
+			tmat <= 0;
+		end else begin
+			tmat <= { i_valid, tmat[11][0:4], tmat[0:10] };
+		end
+	end
+	
+	// Rising edge in a col pre-shift the Kt array into posistion for next cycle
+	always_ff @(posedge clk) begin // using coloumn or'ed leading edge t(matrix) to shift kt
+		for( int ii = 0; ii < 11; ii++ ) begin
+			if( ii == 0 ) 
+				kt_shift[0] <= |{{ i_valid, tmat[5][0:4] } & ~tmat[0] };
+			else 
+				kt_shift[ii] = |{ tmat[ii-1] & ~tmat[ii] };
+		end
+	end
+
+	// Control strobes generated based on delay lines
+	
+	assign o_valid = t[72];
+	assign wt_load = i_valid;
+	assign hshift = |t[71:0]; // shift H back to x6 start but need to shift out last hashes
+	
+	assign init_hash = t[0];
+	assign mode_start = md[0];
+	assign done = t[72];
+	assign mode_done = md[72];
+	
+	///////
+	// Kt
+	///////
+	
+	logic	[0:63][31:0] kt_std; // Sec 4.2.2 6 sixty four constants of 32 bits
+	assign kt_std  = { 32'h428a2f98, 32'h71374491, 32'hb5c0fbcf, 32'he9b5dba5,   
+							 32'h3956c25b, 32'h59f111f1, 32'h923f82a4, 32'hab1c5ed5,  
+							 32'hd807aa98, 32'h12835b01, 32'h243185be, 32'h550c7dc3,   
+							 32'h72be5d74, 32'h80deb1fe, 32'h9bdc06a7, 32'hc19bf174,  
+							 32'he49b69c1, 32'hefbe4786, 32'h0fc19dc6, 32'h240ca1cc,   
+							 32'h2de92c6f, 32'h4a7484aa, 32'h5cb0a9dc, 32'h76f988da,  
+							 32'h983e5152, 32'ha831c66d, 32'hb00327c8, 32'hbf597fc7,   
+							 32'hc6e00bf3, 32'hd5a79147, 32'h06ca6351, 32'h14292967,  
+							 32'h27b70a85, 32'h2e1b2138, 32'h4d2c6dfc, 32'h53380d13,   
+							 32'h650a7354, 32'h766a0abb, 32'h81c2c92e, 32'h92722c85,  
+							 32'ha2bfe8a1, 32'ha81a664b, 32'hc24b8b70, 32'hc76c51a3,   
+							 32'hd192e819, 32'hd6990624, 32'hf40e3585, 32'h106aa070,  
+							 32'h19a4c116, 32'h1e376c08, 32'h2748774c, 32'h34b0bcb5,   
+							 32'h391c0cb3, 32'h4ed8aa4a, 32'h5b9cca4f, 32'h682e6ff3,  
+							 32'h748f82ee, 32'h78a5636f, 32'h84c87814, 32'h8cc70208,   
+							 32'h90befffa, 32'ha4506ceb, 32'hbef9a3f7, 32'hc67178f2 };	
+
+	reg [0:10][0:5][31:0] kt_reg = { // manually re-ordered, only const for POR defaults
+				32'h682e6ff3,32'h428a2f98,32'h550c7dc3,32'h5cb0a9dc,32'h2e1b2138,32'hd192e819,
+				32'h748f82ee,32'h71374491,32'h72be5d74,32'h76f988da,32'h4d2c6dfc,32'hd6990624,
+				32'h78a5636f,32'hb5c0fbcf,32'h80deb1fe,32'h983e5152,32'h53380d13,32'hf40e3585,
+				32'h84c87814,32'he9b5dba5,32'h9bdc06a7,32'ha831c66d,32'h650a7354,32'h106aa070,
+				32'h8cc70208,32'h3956c25b,32'hc19bf174,32'hb00327c8,32'h766a0abb,32'h19a4c116,
+				32'h90befffa,32'h59f111f1,32'he49b69c1,32'hbf597fc7,32'h81c2c92e,32'h1e376c08,
+				32'ha4506ceb,32'h923f82a4,32'hefbe4786,32'hc6e00bf3,32'h92722c85,32'h2748774c,
+				32'hbef9a3f7,32'hab1c5ed5,32'h0fc19dc6,32'hd5a79147,32'ha2bfe8a1,32'h34b0bcb5,
+				32'hc67178f2,32'hd807aa98,32'h240ca1cc,32'h06ca6351,32'ha81a664b,32'h391c0cb3,
+				32'h00000000,32'h12835b01,32'h2de92c6f,32'h14292967,32'hc24b8b70,32'h4ed8aa4a,
+				32'h00000000,32'h243185be,32'h4a7484aa,32'h27b70a85,32'hc76c51a3,32'h5b9cca4f };
+				
+	always_ff @(posedge clk) begin : _kt_reg_array
+		if( reset ) begin
+			kt_reg <= { // manually re-ordered, only const for POR defaults
+				32'h682e6ff3,32'h428a2f98,32'h550c7dc3,32'h5cb0a9dc,32'h2e1b2138,32'hd192e819,
+				32'h748f82ee,32'h71374491,32'h72be5d74,32'h76f988da,32'h4d2c6dfc,32'hd6990624,
+				32'h78a5636f,32'hb5c0fbcf,32'h80deb1fe,32'h983e5152,32'h53380d13,32'hf40e3585,
+				32'h84c87814,32'he9b5dba5,32'h9bdc06a7,32'ha831c66d,32'h650a7354,32'h106aa070,
+				32'h8cc70208,32'h3956c25b,32'hc19bf174,32'hb00327c8,32'h766a0abb,32'h19a4c116,
+				32'h90befffa,32'h59f111f1,32'he49b69c1,32'hbf597fc7,32'h81c2c92e,32'h1e376c08,
+				32'ha4506ceb,32'h923f82a4,32'hefbe4786,32'hc6e00bf3,32'h92722c85,32'h2748774c,
+				32'hbef9a3f7,32'hab1c5ed5,32'h0fc19dc6,32'hd5a79147,32'ha2bfe8a1,32'h34b0bcb5,
+				32'hc67178f2,32'hd807aa98,32'h240ca1cc,32'h06ca6351,32'ha81a664b,32'h391c0cb3,
+				32'h00000000,32'h12835b01,32'h2de92c6f,32'h14292967,32'hc24b8b70,32'h4ed8aa4a,
+				32'h00000000,32'h243185be,32'h4a7484aa,32'h27b70a85,32'hc76c51a3,32'h5b9cca4f };		
+		end else begin
+			kt_reg[0] <= ( kt_shift[0] ) ? { kt_reg[0][1:5], kt_reg[0][0] } : kt_reg[0] ;
+			kt_reg[1] <= ( kt_shift[1] ) ? { kt_reg[1][1:5], kt_reg[1][0] } : kt_reg[1] ;
+			kt_reg[2] <= ( kt_shift[2] ) ? { kt_reg[2][1:5], kt_reg[2][0] } : kt_reg[2] ;
+			kt_reg[3] <= ( kt_shift[3] ) ? { kt_reg[3][1:5], kt_reg[3][0] } : kt_reg[3] ;
+			kt_reg[4] <= ( kt_shift[4] ) ? { kt_reg[4][1:5], kt_reg[4][0] } : kt_reg[4] ;
+			kt_reg[5] <= ( kt_shift[5] ) ? { kt_reg[5][1:5], kt_reg[5][0] } : kt_reg[5] ;
+			kt_reg[6] <= ( kt_shift[6] ) ? { kt_reg[6][1:5], kt_reg[6][0] } : kt_reg[6] ;
+			kt_reg[7] <= ( kt_shift[7] ) ? { kt_reg[7][1:5], kt_reg[7][0] } : kt_reg[7] ;
+			kt_reg[8] <= ( kt_shift[8] ) ? { kt_reg[8][1:5], kt_reg[8][0] } : kt_reg[8] ;
+			kt_reg[9] <= ( kt_shift[9] ) ? { kt_reg[9][1:5], kt_reg[9][0] } : kt_reg[9] ;
+			kt_reg[10]<= ( kt_shift[10]) ? { kt_reg[10][1:5],kt_reg[10][0]} : kt_reg[10];
+		end
+	end
+				
+	// get kt wires for the 11 stages
+	logic [0:10][31:0] kts;
+	always_comb
+		for( int cc = 0; cc < 11; cc++ )
+			kts[cc] = kt_reg[cc][0];
+		
+
+	///////
+	// Wt
+	///////
+	
+	reg   [0:11][0:15][31:0] wt_reg = 0;
+	logic	[0:11][0:17][31:0] wt;
+	logic [0:11][16:17][31:0] s0, s1;
+	logic [0:11][16:17][31:0] w2, w15, w7, w16;
+	
+	// build wt[64] array function array (with up to 2 extra bits
+	always_comb begin
+		for( int qq = 0; qq < 12; qq++ ) begin	
+			for( int ii = 0; ii < 17; ii++ ) begin
+				if( ii < 16 ) begin
+					wt[qq][ii] = wt_reg[qq][ii];
+				end else begin 
+					w2[qq][ii] = wt[qq][ii-2];
+					w7[qq][ii] = wt[qq][ii-7];
+					w15[qq][ii]= wt[qq][ii-15];
+					w16[qq][ii]= wt[qq][ii-16];
+					s1[qq][ii] = {  w2[qq][ii][16:0],  w2[qq][ii][31:17] } ^ {  w2[qq][ii][18:0],  w2[qq][ii][31:19] } ^ { 10'b0,  w2[qq][ii][31:10] }; // section 1.1.2, eqn 4.7
+					s0[qq][ii] = { w15[qq][ii][ 6:0], w15[qq][ii][31: 7] } ^ { w15[qq][ii][17:0], w15[qq][ii][31:18] } ^ {  3'b0, w15[qq][ii][31: 3] }; // section 1.1.2, eqn 4.6
+					wt[qq][ii] = ( s1[qq][ii] + w7[qq][ii] ) + ( s0[qq][ii] + w16[qq][ii] ); // section 6.2.2 step 1		
+				end
+			end // for
+		end // for
+	end //always
+
+	always_ff @(posedge clk) begin
+		if( reset ) begin
+			wt_reg <= 0;
+		end else begin
+			wt_reg[0] <= ( wt_load ) ? i_data : wt[11][1:16]; // shift last by 1 or new input
+			wt_reg[1] <= wt[0][0:15]; // Unshifted
+			for( int ii = 2 ; ii < 12; ii++ ) 
+				wt_reg[ii] <= wt[ii-1][1:16]; // shift 1 round
+		end
+	end	
+
+	// get wt wires for the 11 stages
+	logic [0:10][31:0] wts;
+	always_comb begin
+		for( int ii = 0; ii < 11; ii++ ) 
+			wts[ii] = wt_reg[ii][0];
+	end	
+	
+	///////
+	// SHA 
+	///////
+
+	// Comb logic for 11 Rounds
+	logic   [0:10][31:0]  ch_e_f_g, maj_a_b_c, sig1_e, sig0_a;
+	logic   [0:10][31:0]  da, db, dc, dd, de, df, dg, dh;
+	logic   [0:10][31:0]  qa, qb, qc, qd, qe, qf, qg, qh;
+
+	always_comb begin
+		for( int ii = 0; ii < 11; ii++ ) begin : _sha_logic  // step 3 of 6.2.2
+			ch_e_f_g[ii] = (de[ii] & df[ii]) ^ (~de[ii] & dg[ii]);
+			maj_a_b_c[ii]= (da[ii] & db[ii]) ^ ( da[ii] & dc[ii]) ^ (db[ii] & dc[ii]);
+			sig1_e[ii]   = { de[ii][5:0], de[ii][31:6] } ^ { de[ii][10:0], de[ii][31:11] } ^ { de[ii][24:0], de[ii][31:25] };
+			sig0_a[ii]   = { da[ii][1:0], da[ii][31:2] } ^ { da[ii][12:0], da[ii][31:13] } ^ { da[ii][21:0], da[ii][31:22] };
+			qa[ii] = ((dh[ii] + wts[ii]) + kts[ii]) + ( (ch_e_f_g[ii] + sig1_e[ii]) + (sig0_a[ii] + maj_a_b_c[ii]) );
+			qb[ii] = da[ii];
+			qc[ii] = db[ii];
+			qd[ii] = dc[ii];
+			qe[ii] = ((dh[ii] + wts[ii]) + (kts[ii] + dd[ii])) + (ch_e_f_g[ii] + sig1_e[ii]);
+			qf[ii] = de[ii];
+			qg[ii] = df[ii];
+			qh[ii] = dg[ii];	
+		end
+	end
+
+	// Wire up stages and stage registers
+	logic  [31:0]  na, nb, nc, nd, ne, nf, ng, nh; // next value from mux	
+	reg [0:11][0:7][31:0] acc_reg = 0;
+	always_ff @(posedge clk) begin // 11+1 Stage Registers
+		if( reset ) begin
+			acc_reg <= 0;
+		end else begin
+			// Round outputs registered
+			for( int ii = 0; ii < 11; ii++ ) 
+				acc_reg[ii] <= { qa[ii], qb[ii], qc[ii], qd[ii], qe[ii], qf[ii], qg[ii], qh[ii] };
+			// Mux next starting round
+			acc_reg[11] <= { na, nb, nc, nd, ne, nf, ng, nh };
+	  	end
+	end
+	always_comb begin // stage inputs (except stage 0)
+		{ da[0] , db[0] , dc[0] , dd[0] , de[0] , df[0] , dg[0] , dh[0] } = acc_reg[11];
+		for( int ii = 1; ii < 11; ii++ ) 
+				{ da[ii] , db[ii] , dc[ii] , dd[ii] , de[ii] , df[ii] , dg[ii] , dh[ii] } = acc_reg[ii-1];
+	end
+	
+
+
+
+	///////
+	// HASH 
+	///////
+	
+	reg [0:5][0:7][31:0] hash_reg = 0;
+	reg [10:11][0:7][31:0] sum_reg = 0;
+	always_ff @(posedge clk) begin
+		if( reset ) begin
+			hash_reg <= 0;
+			sum_reg <= 0;
+		end else begin
+			// Pipeline of hash regs
+			if( hshift ) begin
+				// hash 0 gets wrap around 
+				hash_reg[0] <= hash_reg[11];
+				// hast 1..10 get prev
+				for( int ii = 1; ii < 11; ii++ )
+					hash_reg[ii] <= hash_reg[ii-1];
+				// hash 11 is the hash entry point
+				if( init_hash ) begin // load input to first round always
+					hash_reg[11] <= { na, nb, nc, nd, ne, nf, ng, nh };
+				end else begin  // mid wrap                       
+					hash_reg[11] <= hash_reg[5];
+				end					
+
+				// Sum reg 10 aligns with hashreg 8
+				for( int ii = 0; ii < 8; ii++ ) begin
+					sum_reg[10][ii] <= hash_reg[8][ii] + acc_reg[8][ii];
+					sum_reg[11][ii] <= sum_reg[10][ii];
+				end
+			end // hshift
+		end // !reset
+	end
+
+	// First input round
+	// starting hash, or just continuing a multipass loop
+	always_comb begin
+		if( init_hash && mode_start == MODE_INIT ) begin // load standard start value
+			na = 32'h6a09e667;
+			nb = 32'hbb67ae85;
+			nc = 32'h3c6ef372;
+			nd = 32'ha54ff53a;
+			ne = 32'h510e527f;
+			nf = 32'h9b05688c;
+			ng = 32'h1f83d9ab;
+			nh = 32'h5be0cd19;   // Step 2 for 6.1.2 and 6.2.2
+		end else if( init_hash && mode_start == MODE_HASH ) begin // begin with sum hash
+			{ na, nb, nc, nd, ne, nf, ng, nh } = sum_reg[10];
+		end else if( init_hash ) begin // else reload old hash
+			{ na, nb, nc, nd, ne, nf, ng, nh } = hash_reg[10];
+		end else begin // else normal case feed from acc reg
+			{ na, nb, nc, nd, ne, nf, ng, nh } = acc_reg[10];
+		end	
+	end
+
+	
+	// Output is always the sum
+	assign o_data = sum_reg[11];
+	
+endmodule // sha_11_12_core
+	
+
 
 
 // 11 core, 6 hashes in 36 cycles.
