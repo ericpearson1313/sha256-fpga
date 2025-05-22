@@ -55,9 +55,9 @@ module sha_11_12_core (
 	always_ff @(posedge clk) begin // using coloumn or'ed leading edge t(matrix) to shift kt
 		for( int ii = 0; ii < 11; ii++ ) begin
 			if( ii == 0 ) 
-				kt_shift[0] <= |{{ i_valid, tmat[5][0:4] } & ~tmat[0] };
+				kt_shift[0] <= |{{ i_valid, tmat[11][0:4] } & ~tmat[0] };
 			else 
-				kt_shift[ii] = |{ tmat[ii-1] & ~tmat[ii] };
+				kt_shift[ii] <= |{ tmat[ii-1] & ~tmat[ii] };
 		end
 	end
 
@@ -147,12 +147,12 @@ module sha_11_12_core (
 	// Wt
 	///////
 	
-	reg   [0:11][0:15][31:0] wt_reg = 0;
-	logic	[0:11][0:17][31:0] wt;
-	logic [0:11][16:17][31:0] s0, s1;
-	logic [0:11][16:17][31:0] w2, w15, w7, w16;
+	reg   [0:11][0:15 ][31:0] wt_reg = 0;
+	logic	[0:11][0:16 ][31:0] wt;
+	logic [0:11][16:16][31:0] s0, s1;
+	logic [0:11][16:16][31:0] w2, w15, w7, w16;
 	
-	// build wt[64] array function array (with up to 2 extra bits
+	// build wt[64] array function array (with up to 1 extra bits
 	always_comb begin
 		for( int qq = 0; qq < 12; qq++ ) begin	
 			for( int ii = 0; ii < 17; ii++ ) begin
@@ -186,7 +186,7 @@ module sha_11_12_core (
 	logic [0:10][31:0] wts;
 	always_comb begin
 		for( int ii = 0; ii < 11; ii++ ) 
-			wts[ii] = wt_reg[ii][0];
+			wts[ii] = wt_reg[ii+1][0];
 	end	
 	
 	///////
@@ -243,7 +243,7 @@ module sha_11_12_core (
 	///////
 	
 	reg [0:11][0:7][31:0] hash_reg = 0;
-	reg [10:11][0:7][31:0] sum_reg = 0;
+	reg [9:10][0:7][31:0] sum_reg = 0;
 	always_ff @(posedge clk) begin
 		if( reset ) begin
 			hash_reg <= 0;
@@ -265,8 +265,8 @@ module sha_11_12_core (
 
 				// Sum reg 10 aligns with hashreg 8
 				for( int ii = 0; ii < 8; ii++ ) begin
-					sum_reg[10][ii] <= hash_reg[8][ii] + acc_reg[8][ii];
-					sum_reg[11][ii] <= sum_reg[10][ii];
+					sum_reg[9][ii] <= hash_reg[8][ii] + acc_reg[8][ii];
+					sum_reg[10][ii] <= sum_reg[9][ii];
 				end
 			end // hshift
 		end // !reset
@@ -295,7 +295,7 @@ module sha_11_12_core (
 
 	
 	// Output is always the sum
-	assign o_data = sum_reg[11];
+	assign o_data = sum_reg[10];
 	
 endmodule // sha_11_12_core
 	
